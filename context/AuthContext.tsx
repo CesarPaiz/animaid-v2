@@ -1,12 +1,8 @@
-
-
-
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback, useMemo } from 'react';
-import { createClient, SupabaseClient, Session, AuthUser } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, Session, AuthUser, AuthError } from '@supabase/supabase-js';
 import { User, Media, MediaList, MediaListStatus } from '../types';
 import { getMultipleMediaDetails } from '../services/anilistService';
 
-// --- Supabase Schema Definition ---
 export type Database = {
   public: {
     Tables: {
@@ -78,25 +74,44 @@ export type Database = {
   };
 };
 
-// --- Type Aliases ---
 type MediaEntryRow = Database['public']['Tables']['media_entries']['Row'];
 type MediaEntryInsert = Database['public']['Tables']['media_entries']['Insert'];
 
-
-// --- Supabase Client Initialization ---
-// The application code expects SUPABASE_URL and SUPABASE_ANON_KEY to be available
-// as environment variables.
 const supabaseUrl = "https://bhlhsvfgvfghgjwwdwzc.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJobGhzdmZndmZnaGdqd3dkd3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NzM3NzQsImV4cCI6MjA3MDQ0OTc3NH0.ehcx-B1VhfKa5TFbpPcpkecB1cBIDUIHzTnNha372CY";
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Supabase URL and Anon Key are not configured in environment variables.");
-}
-
 export const supabase: SupabaseClient<Database> = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
+const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[]> => {
+    if (!entries || entries.length === 0) return [];
+    const mediaIds = entries.map(e => e.media_id);
+    const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
+    const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
 
-// --- Types ---
+    const mergedList = entries.map((entry): MediaList | null => {
+        const mediaFromMap = mediaDetailsMap.get(entry.media_id);
+        if (!mediaFromMap) return null;
+
+        const mediaWithProgress: Media = {
+            ...mediaFromMap,
+            userProgress: {
+                progress: entry.progress,
+                score: entry.score ?? 0,
+                status: entry.status,
+            }
+        };
+
+        return {
+            media: mediaWithProgress,
+            progress: entry.progress,
+            score: entry.score ?? 0,
+            status: entry.status,
+            updatedAt: new Date(entry.updated_at).getTime() / 1000
+        };
+    }).filter((item): item is MediaList => item !== null);
+
+    return mergedList.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+};
+
 interface AuthStatus {
   isLoading: boolean;
   message: string | null;
@@ -114,7 +129,7 @@ interface MediaEntryUpsert {
 interface AuthContextType {
   user: User | null;
   session: Session | null;
-  signIn: (email: string, pass: string) => Promise<any>;
+  signIn: (email: string, pass: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   authStatus: AuthStatus;
   clearAuthStatus: () => void;
@@ -129,7 +144,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// --- AuthProvider Component ---
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -141,8 +155,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isDebugMode, setIsDebugMode] = useState<boolean>(() => {
     try {
       const item = window.localStorage.getItem('debugMode');
-      return item ? JSON.parse(item) : false;
+      return item ? JSON.parse(item) === true : false;
     } catch (error) {
+      console.error("Error al leer 'debugMode' desde localStorage:", error);
       return false;
     }
   });
@@ -153,7 +168,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
             window.localStorage.setItem('debugMode', JSON.stringify(newState));
         } catch (error) {
-            console.error("Could not save debug mode to localStorage", error);
+            console.error("No se pudo guardar 'debugMode' en localStorage:", error);
         }
         return newState;
     });
@@ -171,7 +186,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .eq('id', authUser.id)
         .single();
       
-      if (error) console.error("Error fetching profile:", error);
+      if (error) console.error("Error al obtener el perfil de usuario:", error);
       
       setUser({
         id: authUser.id,
@@ -194,7 +209,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     fetchSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (_event, session) => {
         setSession(session);
         await handleUser(session?.user ?? null);
         setAuthStatus(prev => ({ ...prev, isLoading: false }));
@@ -206,7 +221,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [handleUser]);
 
-  const signIn = useCallback(async (email: string, pass: string) => {
+  const signIn = useCallback(async (email: string, pass: string): Promise<{ error: AuthError | null }> => {
     setAuthStatus({ isLoading: true, message: 'Iniciando sesión...', isError: false });
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) {
@@ -234,15 +249,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .eq('user_id', user.id)
         .eq('media_id', mediaId)
         .single();
-      if (error && error.code !== 'PGRST116') { // Ignore 'exact one row' error
-        console.error("Error fetching media entry:", error);
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error("Error al obtener la entrada de media:", error);
       }
       return data;
   }, [user]);
   
   const upsertMediaEntry = useCallback(async (entry: MediaEntryUpsert): Promise<MediaEntryRow | null> => {
       if (!user) return null;
-
       const entryToUpsert: MediaEntryInsert = {
           ...entry,
           user_id: user.id
@@ -255,52 +270,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .single();
 
       if (error) {
-        console.error('Error upserting media entry:', error);
+        console.error('Error al actualizar/insertar la entrada de media:', error);
         return null;
       }
       return data;
   }, [user]);
 
-  const fetchAndMergeMedia = useCallback(async (entries: MediaEntryRow[]): Promise<MediaList[]> => {
-      if (!entries || entries.length === 0) return [];
-      const mediaIds = entries.map(e => e.media_id);
-      const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
-      const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
-      
-      return entries.map((entry): MediaList | null => {
-          const mediaFromMap = mediaDetailsMap.get(entry.media_id);
-          if (!mediaFromMap) return null;
-          
-          const mediaWithProgress: Media = {
-            ...mediaFromMap,
-            userProgress: {
-                progress: entry.progress,
-                score: entry.score ?? 0,
-                status: entry.status,
-            }
-          };
-          
-          return {
-              media: mediaWithProgress,
-              progress: entry.progress,
-              score: entry.score ?? 0,
-              status: entry.status,
-              updatedAt: new Date(entry.updated_at).getTime() / 1000
-          };
-      }).filter((item): item is MediaList => item !== null)
-        .sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  }, []);
-  
   const getLibraryList = useCallback(async (): Promise<MediaList[]> => {
       if (!user) return [];
       const { data: entries, error } = await supabase
           .from('media_entries')
           .select('*')
           .eq('user_id', user.id)
-          .in('status', [MediaListStatus.CURRENT, MediaListStatus.REPEATING, MediaListStatus.PLANNING]);
+          .in('status', ['CURRENT', 'REPEATING', 'PLANNING']);
       if (error) { console.error(error); return []; }
-      return fetchAndMergeMedia(entries || []);
-  }, [user, fetchAndMergeMedia]);
+      return _fetchAndMergeMedia(entries || []);
+  }, [user]);
   
   const getFullLibraryList = useCallback(async (): Promise<MediaList[]> => {
     if (!user) return [];
@@ -311,11 +296,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .order('updated_at', { ascending: false });
         
     if (error) { 
-        console.error("Error fetching full library list:", error); 
+        console.error("Error al obtener la librería completa:", error); 
         return []; 
     }
-    return fetchAndMergeMedia(entries || []);
-  }, [user, fetchAndMergeMedia]);
+    return _fetchAndMergeMedia(entries || []);
+  }, [user]);
 
   const getHistoryList = useCallback(async (): Promise<MediaList[]> => {
       if (!user) return [];
@@ -323,12 +308,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .from('media_entries')
           .select('*')
           .eq('user_id', user.id)
-          .in('status', [MediaListStatus.CURRENT, MediaListStatus.REPEATING, MediaListStatus.PAUSED, MediaListStatus.COMPLETED])
+          .in('status', ['CURRENT', 'REPEATING', 'PAUSED', 'COMPLETED'])
           .order('updated_at', { ascending: false })
           .limit(50);
       if (error) { console.error(error); return []; }
-      return fetchAndMergeMedia(entries || []);
-  }, [user, fetchAndMergeMedia]);
+      return _fetchAndMergeMedia(entries || []);
+  }, [user]);
 
   const value = useMemo(() => ({ 
       user, 
@@ -355,7 +340,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 };
 
-// --- Custom Hook ---
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {

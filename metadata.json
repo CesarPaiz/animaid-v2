@@ -1,6 +1,5 @@
 {
-  "name": "Animaid",
-  "description": "A single-page application designed for mobile devices to explore and track anime and manga using the AniList API. It features trending sections, a powerful search, and personalized user lists.",
-  "requestFramePermissions": [],
-  "prompt": ""
+  "name": "AniMaid New",
+  "description": "An empty app",
+  "requestFramePermissions": []
 }

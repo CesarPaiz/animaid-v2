@@ -14,10 +14,12 @@ import {
   XMarkIcon,
   ClockIcon,
   DocumentDuplicateIcon,
+  UserCircleIcon,
+  ChevronUpIcon,
 } from '@heroicons/react/24/outline';
 
 // Importa los íconos rellenos (solid)
-import { StarIcon as StarIconSolid, PlayIcon as PlayIconSolid } from '@heroicons/react/24/solid';
+import { StarIcon as StarIconSolid, PlayIcon as PlayIconSolid, CheckIcon as CheckIconSolid } from '@heroicons/react/24/solid';
 import React from 'react';
 
 // --- Íconos Personalizados (que no están en Heroicons) ---
@@ -47,8 +49,9 @@ export const HistoryIcon = ClockIcon;
 export const CopyIcon = DocumentDuplicateIcon;
 
 // Chevrons y flechas ya tienen el nombre correcto
-export { ChevronLeftIcon, ChevronRightIcon, ArrowLeftIcon, BookOpenIcon };
+export { ChevronLeftIcon, ChevronRightIcon, ArrowLeftIcon, BookOpenIcon, UserCircleIcon, ChevronUpIcon, ClockIcon, Cog6ToothIcon };
 
 // Íconos sólidos
 export const StarIcon = StarIconSolid;
 export const PlayIcon = PlayIconSolid;
+export { CheckIconSolid };

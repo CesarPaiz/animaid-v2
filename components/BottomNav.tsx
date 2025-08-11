@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { TrendingIcon, SearchIcon, LibraryIcon, SettingsIcon, HistoryIcon } from './icons';
 
@@ -18,11 +17,17 @@ interface NavItemProps {
 }
 
 const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, onClick }) => (
-  <button onClick={onClick} className="flex flex-col items-center justify-center w-full pt-2 pb-1 transition-colors duration-200 ease-in-out focus:outline-none">
-    <div className={`w-6 h-6 mb-1 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>
-      {icon}
+  <button 
+    onClick={onClick} 
+    className="flex-1 flex flex-col items-center justify-center h-full transition-colors duration-300 ease-in-out focus:outline-none group"
+  >
+    <div className={`relative flex items-center justify-center h-12 w-16 transition-all duration-300 ease-in-out`}>
+        <div className={`absolute inset-0 transition-all duration-300 ease-in-out ${isActive ? 'bg-indigo-500/20 scale-100' : 'scale-0'} rounded-full`}></div>
+        <div className={`w-6 h-6 transition-colors duration-200 ease-in-out ${isActive ? 'text-indigo-400' : 'text-gray-400 group-hover:text-gray-200'}`}>
+            {icon}
+        </div>
     </div>
-    <span className={`text-xs font-medium ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>
+    <span className={`text-xs font-semibold -mt-2 transition-colors duration-200 ease-in-out ${isActive ? 'text-indigo-400' : 'text-gray-500'}`}>
       {label}
     </span>
   </button>
@@ -33,15 +38,15 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeView, setActiveView, showLi
     { id: 'trending', label: 'Tendencias', icon: <TrendingIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
     ...(showLibrary ? [
-      { id: 'library', label: 'Mi lista', icon: <LibraryIcon /> },
+      { id: 'library', label: 'Mi Lista', icon: <LibraryIcon /> },
       { id: 'history', label: 'Historial', icon: <HistoryIcon /> },
     ] : []),
     { id: 'settings', label: 'Ajustes', icon: <SettingsIcon /> },
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-16 bg-slate-800/80 backdrop-blur-lg border-t border-slate-700 shadow-lg z-50">
-      <div className="flex justify-around items-center h-full max-w-md mx-auto">
+    <nav className="fixed bottom-0 left-0 right-0 h-20 bg-gray-950/80 backdrop-blur-xl border-t border-gray-800/80 z-50">
+      <div className="flex justify-around items-center h-full max-w-md mx-auto px-2">
         {navItems.map(item => (
           <NavItem
             key={item.id}

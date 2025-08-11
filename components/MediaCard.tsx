@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Media, MediaFormat } from '../types';
+import { Media } from '../types';
 
 interface MediaCardProps {
   media: Media;
@@ -7,13 +7,12 @@ interface MediaCardProps {
 }
 
 const MediaCard: React.FC<MediaCardProps> = ({ media, onClick }) => {
-  const isManga = media.format === MediaFormat.MANGA || media.format === MediaFormat.NOVEL || media.format === MediaFormat.ONE_SHOT;
   const [isImageLoaded, setIsImageLoaded] = useState(false);
 
   return (
     <button
       onClick={onClick}
-      className="group relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-slate-800 shadow-lg transition-transform duration-300 ease-in-out active:scale-95 md:hover:scale-105"
+      className="group relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-gray-800 shadow-md transition-all duration-300 ease-in-out active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 md:hover:scale-105 md:hover:shadow-lg md:hover:shadow-indigo-900/40"
       aria-label={media.title.english || media.title.romaji}
     >
       <img
@@ -23,13 +22,13 @@ const MediaCard: React.FC<MediaCardProps> = ({ media, onClick }) => {
         onLoad={() => setIsImageLoaded(true)}
         loading="lazy"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-      <div className="absolute bottom-0 left-0 right-0 p-2.5">
-        <h3 className="text-sm font-bold text-white drop-shadow-lg truncate">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 group-hover:from-black/80" />
+      <div className="absolute bottom-0 left-0 right-0 p-3">
+        <h3 className="text-sm font-semibold text-white drop-shadow-lg truncate">
           {media.title.english || media.title.romaji}
         </h3>
-        <p className="text-xs text-slate-300 drop-shadow-md capitalize">
-          {media.format.replace(/_/g, ' ').toLowerCase()}
+        <p className="text-xs text-gray-300 drop-shadow-md capitalize">
+          {media.format?.replace(/_/g, ' ').toLowerCase()}
         </p>
       </div>
     </button>

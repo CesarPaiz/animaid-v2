@@ -36,6 +36,24 @@ export const MANGA_PROVIDERS = ['comick', 'nhentai', 'inmanga'];
 // --- UTILITY FUNCTIONS ---
 
 /**
+ * Creates a safe, valid URL by joining a base URL and a path.
+ * Handles cases where the base might have a trailing slash or the path might be missing a leading one.
+ * @param base The base URL (e.g., https://api.example.com)
+ * @param path The path to append (e.g., /users/1 or users/1)
+ * @returns A full, valid URL.
+ */
+const safeJoinUrl = (base: string, path: string): string => {
+    // If path is already a full URL, trust it
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
+    const baseUrl = base.endsWith('/') ? base.slice(0, -1) : base;
+    const pathUrl = path.startsWith('/') ? path : `/${path}`;
+    return `${baseUrl}${pathUrl}`;
+};
+
+
+/**
  * Performs a fetch request with a timeout and standardized error handling.
  * @param url The URL to request.
  * @param options The request options (method, body, etc.).
@@ -71,37 +89,6 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
     }
 };
 
-// --- ANILIST AUTHENTICATION ---
-/**
- * Exchanges an AniList authorization code for an access token via a proxy.
- * This is necessary to keep the client_secret secure.
- * @param code The authorization code from AniList.
- * @param clientId The AniList client ID.
- * @returns A promise that resolves to the access token.
- */
-export const exchangeCodeForToken = async (code: string, clientId: string): Promise<string> => {
-    const url = `${CONSUMET_API_URL}/meta/anilist/token`; 
-    const body = {
-        grant_type: 'authorization_code',
-        client_id: clientId,
-        code: code,
-        redirect_uri: window.location.origin
-    };
-
-    const data = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!data.access_token) {
-        throw new Error('Proxy did not return an access_token. Response: ' + JSON.stringify(data));
-    }
-    
-    return data.access_token;
-};
-
-
 // --- ANIME LOGIC (Provider by Provider) ---
 export const getAnimeEpisodeSourcesFromProvider = async (provider: string, title: string, episodeNumber: number): Promise<ProviderResult<VideoSource[]>> => {
     const log: DebugLogEntry[] = [];
@@ -124,7 +111,7 @@ export const getAnimeEpisodeSourcesFromProvider = async (provider: string, title
         log[log.length-1].extracted = `Ruta de info encontrada: ${animeInfoPath}`;
 
         // Step 2: Get anime info to find the specific episode.
-        const infoUrl = `${CONSUMET_API_URL}${animeInfoPath}`;
+        const infoUrl = safeJoinUrl(CONSUMET_API_URL, animeInfoPath);
         log.push({ step: 'Paso 2: Obtener información del anime', url: infoUrl });
         const animeInfo = await fetchWithTimeout(infoUrl);
         log[log.length-1].response = animeInfo;
@@ -147,8 +134,8 @@ export const getAnimeEpisodeSourcesFromProvider = async (provider: string, title
         let sourcesUrl: string;
         
         // For some providers (like tioanime), the episode object contains the direct watch URL path.
-        if (episode.url && episode.url.startsWith('/')) {
-            sourcesUrl = `${CONSUMET_API_URL}${episode.url}`;
+        if (episode.url) {
+            sourcesUrl = safeJoinUrl(CONSUMET_API_URL, episode.url);
             log[log.length-1].extracted = `Ruta directa de episodio encontrada: ${episode.url}`;
         } 
         // For others, it might contain an ID that needs to be used with a /watch/{id} endpoint.
@@ -220,7 +207,7 @@ export const getMangaChapterPagesFromProvider = async (provider: string, mangaTi
         }
         log[log.length-1].extracted = `Ruta de info encontrada: ${mangaInfoPath}`;
     
-        const infoUrl = `${CONSUMET_API_URL}${mangaInfoPath}`;
+        const infoUrl = safeJoinUrl(CONSUMET_API_URL, mangaInfoPath);
         log.push({ step: `Paso 2: Obtener información del manga`, url: infoUrl });
         const mangaInfo = await fetchWithTimeout(infoUrl);
         log[log.length - 1].response = mangaInfo;

@@ -1,50 +1,135 @@
-# Animaid Setup Guide
+# Animaid Supabase Setup Guide
 
-This guide will walk you through the necessary steps to configure Animaid to use the AniList API for authentication and data fetching.
+This guide will walk you through setting up a Supabase backend for Animaid. Supabase will handle user authentication and store all user-specific data, such as watch progress and lists.
 
-The most common issue during setup is an incorrect **Redirect URL**, which can lead to errors like `unsupported_grant_type` or `redirect_uri mismatch`. Following these steps carefully will help you avoid this.
+## Application Architecture
+
+Animaid uses a hybrid data model:
+
+1.  **Supabase**: This is your private backend for all user-related functionality.
+    *   **Authentication**: Manages your single user account and session.
+    *   **Database**: Stores your profile and media entries (progress, status, lists, etc.).
+2.  **AniList API (`graphql.anilist.co`)**: This is used as a public, read-only data source for all anime and manga metadata (titles, descriptions, genres, etc.). The app does not authenticate with AniList.
+3.  **Consumet Content API (`consumet-api-phi.vercel.app`)**: This service is used to find streaming sources for anime and manga.
+
+---
 
 ## Configuration Steps
 
-### 1. Create an AniList API Client
+### 1. Create a Supabase Project
 
-*   First, you need an AniList account. If you don't have one, create it.
-*   Navigate to the API settings page: [https://anilist.co/settings/api](https://anilist.co/settings/api)
-*   Click the **"Create New Client"** button.
+*   Go to [supabase.com](https://supabase.com/) and create a new account or log in.
+*   Click on **"New project"** and choose an organization.
+*   Fill in the project details:
+    *   **Name**: A descriptive name, e.g., `animaid-backend`.
+    *   **Database Password**: Generate a secure password and save it somewhere safe.
+    *   **Region**: Choose the region closest to you.
+*   Click **"Create new project"**. Wait for the project to be provisioned.
 
-### 2. Client Details
+### 2. Get API Credentials
 
-*   **Client Name**: Give your client a descriptive name, for example: `Animaid App`.
-*   **Client Type**: Leave this as `Web`.
+Once your project is ready, you need to get the API URL and the `anon` key.
 
-### 3. Redirect URL (Most Important Step!)
+*   In your Supabase project dashboard, go to the **Settings** page (the gear icon in the left sidebar).
+*   Click on **API** in the settings menu.
+*   You will find your **Project URL** and a **Project API Key** of type `anon` (public).
+*   These credentials will be used as environment variables in the application's hosting environment. The application code is already configured to read `process.env.SUPABASE_URL` and `process.env.SUPABASE_ANON_KEY`.
 
-This is the most critical step for the login flow to work correctly.
+### 3. Create Your User Account
 
-The **Redirect URL** is the exact URL where AniList will send you back after you authorize the application. The application code is designed to automatically handle the login when you are redirected.
+*   Before running the database script, you must create your single user account.
+*   In your Supabase project dashboard, go to **Authentication** (the user icon in the left sidebar).
+*   Under the **Users** tab, click **"+ Add user"**.
+*   Enter the **email** and **password** you want to use for your personal account.
+*   Click **"Create user"**. This user will be automatically confirmed.
 
-The URL you enter here **must exactly match** the URL where you are running the Animaid application in your browser.
+### 4. Set up the Database Schema
 
-#### For Production (animaid.vercel.app)
+*   Now, go to the **SQL Editor** (the page icon with `<>` in the left sidebar).
+*   Click on **"+ New query"**.
+*   Copy the entire SQL command below and paste it into the editor. This script will create the tables and automatically create a profile for the user you just made.
+*   Click the **"RUN"** button.
 
-The official production instance of this application is hosted at `https://animaid.vercel.app`.
+---
 
-*   When configuring your AniList API Client, you **must** use `https://animaid.vercel.app` as the Redirect URL for the login to work on the live site.
+## Database SQL Command
 
-#### For Local Development:
+Copy and run this entire block in the Supabase SQL Editor.
 
-If you are running the app on your local machine for development, the URL in your browser is likely `http://localhost:PORT` or `http://127.0.0.1:PORT`. The port can vary (e.g., 3000, 5173, 8080).
+```sql
+-- This script sets up the entire database schema for Animaid.
+-- It creates tables for user profiles and media tracking, enables Row Level Security,
+-- and sets up database triggers for automatic profile creation and timestamp updates.
 
-*   Check the address bar of your browser when running the app.
-*   Copy that URL (e.g., `http://localhost:3000`) and paste it into the "Redirect URL" field on the AniList client settings page.
+-- Create Profiles table to store public user data, linked to Supabase's built-in auth.users table.
+create table public.profiles (
+  id uuid references auth.users(id) on delete cascade not null primary key,
+  updated_at timestamp with time zone,
+  username text unique,
+  avatar_url text,
+  constraint username_length check (char_length(username) >= 3)
+);
 
-**Tip:** You can add multiple redirect URLs by separating them with a new line. It's a good practice to add both your production URL (`https://animaid.vercel.app`) and your local development URL.
+-- Create Media Entries table to store user's list, progress, and status for each anime or manga.
+create table public.media_entries (
+  id bigint generated by default as identity primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  media_id integer not null,
+  media_type text not null, -- 'ANIME' or 'MANGA'
+  status text check (status in ('CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING')),
+  progress integer not null default 0,
+  score integer default 0,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, media_id)
+);
 
-### 4. Save and Get Client ID
+-- Enable Row Level Security (RLS) for both tables. This is a critical security step.
+alter table public.profiles enable row level security;
+alter table public.media_entries enable row level security;
 
-*   Click "Save" to create the client.
-*   AniList will now show you a `Client ID` and a `Client Secret`.
-*   **This application only needs the `Client ID`**. The `Client Secret` is not used directly in the client-side code; it is handled by the backend proxy for security.
-*   The application's default Client ID is `14401`. This ID is already configured for the official production URL. If you create your own client, you will need to update the ID in `context/AuthContext.tsx`.
+-- RLS Policies for 'profiles' table.
+create policy "Profiles are viewable by everyone." on public.profiles for select using (true);
+create policy "Users can insert their own profile." on public.profiles for insert with check (auth.uid() = id);
+create policy "Users can update their own profile." on public.profiles for update using (auth.uid() = id);
 
-Once these steps are completed, the "Conectar con AniList" button in the app's settings should work correctly on both your local machine and the live `animaid.vercel.app` site.
+-- RLS Policies for 'media_entries' table.
+create policy "Users can view their own media entries." on public.media_entries for select using (auth.uid() = user_id);
+create policy "Users can insert their own media entries." on public.media_entries for insert with check (auth.uid() = user_id);
+create policy "Users can update their own media entries." on public.media_entries for update using (auth.uid() = user_id);
+create policy "Users can delete their own media entries." on public.media_entries for delete using (auth.uid() = user_id);
+
+-- Function to create a profile for a new user. It uses the email to generate a default username.
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, username)
+  values (new.id, coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)));
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Trigger to call the function after a new user is created in auth.
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Function to automatically update the 'updated_at' timestamp on media_entries.
+create or replace function public.update_updated_at_column()
+returns trigger as $$
+begin
+   new.updated_at = timezone('utc'::text, now()); 
+   return new;
+end;
+$$ language 'plpgsql';
+
+-- Trigger to call the timestamp update function whenever a media_entry is updated.
+create trigger update_media_entries_updated_at
+before update on public.media_entries
+for each row
+execute procedure public.update_updated_at_column();
+```
+---
+
+## Setup Complete
+
+Once you have configured the environment variables and run the SQL script, your Animaid application is ready to connect to your new Supabase backend. Go to the app's Settings page and click "Iniciar Sesión" to log in.

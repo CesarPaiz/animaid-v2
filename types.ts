@@ -28,14 +28,16 @@ export enum MediaSort {
     START_DATE_DESC = 'START_DATE_DESC',
 }
 
-export enum MediaListStatus {
-    CURRENT = 'CURRENT',
-    PLANNING = 'PLANNING',
-    COMPLETED = 'COMPLETED',
-    DROPPED = 'DROPPED',
-    PAUSED = 'PAUSED',
-    REPEATING = 'REPEATING'
-}
+export const MediaListStatus = {
+    CURRENT: 'CURRENT',
+    PLANNING: 'PLANNING',
+    COMPLETED: 'COMPLETED',
+    DROPPED: 'DROPPED',
+    PAUSED: 'PAUSED',
+    REPEATING: 'REPEATING'
+} as const;
+
+export type MediaListStatus = typeof MediaListStatus[keyof typeof MediaListStatus];
 
 export interface MediaTitle {
   romaji: string;
@@ -49,6 +51,12 @@ export interface MediaCoverImage {
   color?: string;
 }
 
+export interface NextAiringEpisode {
+  airingAt: number;
+  timeUntilAiring: number;
+  episode: number;
+}
+
 export interface Media {
   id: number;
   title: MediaTitle;
@@ -60,24 +68,26 @@ export interface Media {
   averageScore?: number;
   description: string;
   genres: string[];
+  nextAiringEpisode?: NextAiringEpisode;
   userProgress?: {
     progress: number;
     score: number;
+    status?: MediaListStatus;
   };
 }
 
 export interface User {
-  id: number;
-  name: string;
-  avatar: {
-    large: string;
-  };
+  id: string; // Supabase user ID is a UUID string
+  username: string;
+  avatar_url?: string;
+  email?: string;
 }
 
 export interface MediaList {
   media: Media;
   progress: number;
   score: number;
+  status?: MediaListStatus;
   updatedAt?: number;
 }
 

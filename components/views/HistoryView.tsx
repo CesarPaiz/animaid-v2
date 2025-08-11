@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Media, MediaList } from '../../types';
-import { getUserMediaHistory } from '../../services/anilistService';
 import Spinner from '../Spinner';
 import { useAuth } from '../../context/AuthContext';
+import { HistoryIcon, UserCircleIcon } from '../icons';
 
-// Helper to format time relative to now
 const timeAgo = (timestamp: number): string => {
     const now = new Date();
     const seconds = Math.floor((now.getTime() - (timestamp * 1000)) / 1000);
@@ -29,18 +27,18 @@ interface HistoryListItemProps {
 }
 
 const HistoryListItem: React.FC<HistoryListItemProps> = ({ item, onClick }) => (
-    <button onClick={onClick} className="flex w-full items-center bg-slate-800 p-2 rounded-lg shadow-md mb-3 text-left transition-colors hover:bg-slate-700/50">
+    <button onClick={onClick} className="flex w-full items-center bg-gray-900 p-3 rounded-xl shadow-md mb-3 text-left transition-all duration-200 hover:bg-gray-800/60 hover:scale-[1.02]">
         <img 
             src={item.media.coverImage.large || item.media.coverImage.extraLarge}
             alt={item.media.title.romaji}
-            className="w-16 h-24 object-cover rounded-md flex-shrink-0"
+            className="w-16 h-24 object-cover rounded-lg flex-shrink-0 shadow-lg"
         />
         <div className="ml-4 flex-1 overflow-hidden">
             <h3 className="font-bold text-white leading-tight truncate">{item.media.title.english || item.media.title.romaji}</h3>
-            <p className="text-sm text-slate-400">
-                Progreso: {item.progress} / {item.media.episodes || item.media.chapters || '?'}
+            <p className="text-sm text-gray-400 mt-1">
+                Visto cap./ep. {item.progress}
             </p>
-             {item.updatedAt && <p className="text-xs text-slate-500 mt-1">{timeAgo(item.updatedAt)}</p>}
+            {item.updatedAt && <p className="text-xs text-gray-500 mt-2 font-medium">{timeAgo(item.updatedAt)}</p>}
         </div>
     </button>
 );
@@ -49,61 +47,67 @@ const HistoryListItem: React.FC<HistoryListItemProps> = ({ item, onClick }) => (
 const HistoryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMediaSelect }) => {
     const [userHistory, setUserHistory] = useState<MediaList[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const { user, token, isLoading: isAuthLoading } = useAuth();
+    const { user, getHistoryList, authStatus } = useAuth();
 
     useEffect(() => {
-        if (user && token) {
-            const fetchData = async () => {
-                setIsLoading(true);
-                try {
-                    const data = await getUserMediaHistory(user.id, token);
+        if (user) {
+            setIsLoading(true);
+            getHistoryList()
+                .then(data => {
                     setUserHistory(data);
-                } catch (error) {
+                })
+                .catch(error => {
                     console.error("Failed to fetch user history:", error);
-                } finally {
+                })
+                .finally(() => {
                     setIsLoading(false);
-                }
-            };
-            fetchData();
-        } else if (!isAuthLoading) {
+                });
+        } else if (!authStatus.isLoading) {
             setIsLoading(false);
             setUserHistory([]);
         }
-    }, [user, token, isAuthLoading]);
+    }, [user, authStatus.isLoading, getHistoryList]);
+    
+    const renderEmptyState = (isLoggedIn: boolean) => (
+        <div className="text-center py-16 px-4">
+            {isLoggedIn ? (
+                <>
+                    <HistoryIcon className="w-16 h-16 mx-auto text-gray-700 mb-4" />
+                    <h3 className="text-xl font-semibold text-white">Sin Actividad Reciente</h3>
+                    <p className="text-gray-500 mt-2">Tu historial de visualización aparecerá aquí.</p>
+                </>
+            ) : (
+                <>
+                    <UserCircleIcon className="w-20 h-20 mx-auto text-gray-700" />
+                    <p className="text-gray-400 mt-4 text-lg">Inicia sesión para ver tu historial.</p>
+                </>
+            )}
+        </div>
+    );
 
-    if (isAuthLoading || (isLoading && user)) {
+    if (authStatus.isLoading || (isLoading && user)) {
         return (
-             <div className="pt-6">
-                <header className="px-4 mb-6">
-                    <h1 className="text-3xl font-extrabold tracking-tight text-white">Historial</h1>
+             <div className="pt-8">
+                <header className="px-4 md:px-6 mb-6">
+                    <h1 className="text-4xl font-black tracking-tighter text-white">Historial</h1>
                 </header>
                 <Spinner />
             </div>
         )
     }
 
-    if (!user) {
-        return (
-            <div className="pt-6 text-center">
-                 <header className="px-4 mb-6">
-                    <h1 className="text-3xl font-extrabold tracking-tight text-white">Historial</h1>
-                 </header>
-                <p className="text-slate-400 mt-8">Inicia sesión para ver tu historial.</p>
-            </div>
-        )
-    }
-
     return (
-        <div className="pt-6">
-            <header className="px-4 mb-6">
-                <h1 className="text-3xl font-extrabold tracking-tight text-white">Historial</h1>
-                <p className="text-slate-400 mt-1">Tu actividad más reciente.</p>
+        <div className="pt-8">
+            <header className="px-4 md:px-6 mb-6">
+                <h1 className="text-4xl font-black tracking-tighter text-white">Historial</h1>
+                <p className="text-gray-400 mt-1">Tu actividad más reciente.</p>
             </header>
-            <div className="px-4">
-                {userHistory.length > 0 ? (
+            <div className="px-4 md:px-6">
+                {!user ? renderEmptyState(false) :
+                userHistory.length > 0 ? (
                     userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
                 ) : (
-                    <p className="text-slate-400 text-center py-8">No se ha encontrado actividad reciente.</p>
+                    renderEmptyState(true)
                 )}
             </div>
         </div>

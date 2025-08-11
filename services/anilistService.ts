@@ -1,10 +1,12 @@
-import { Media, MediaList, User, MediaFormat, MediaStatus, MediaSort, MediaListStatus, Genre } from '../types';
+import { Media, MediaFormat, MediaStatus, MediaSort, Genre } from '../types';
 
+// The official AniList GraphQL endpoint.
 const API_URL = 'https://graphql.anilist.co';
 
-// GraphQL Fragments
-const mediaFieldsFragment = `
-  fragment mediaFields on Media {
+// A reusable GraphQL fragment to get all the media fields we need.
+// This ensures consistency and avoids repetition.
+const mediaFragment = `
+  fragment media on Media {
     id
     title {
       romaji
@@ -23,99 +25,118 @@ const mediaFieldsFragment = `
     averageScore
     description(asHtml: false)
     genres
-    mediaListEntry {
-      progress
-      score
+    nextAiringEpisode {
+      airingAt
+      timeUntilAiring
+      episode
     }
   }
 `;
 
-// API Helper
-async function fetchAniList(query: string, variables: object = {}, token?: string | null) {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
+// API Helper for GraphQL requests.
+async function fetchFromGraphQL(query: string, variables: Record<string, any> = {}) {
   const response = await fetch(API_URL, {
     method: 'POST',
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
     body: JSON.stringify({
       query,
       variables,
     }),
   });
 
-  const json = await response.json();
-
   if (!response.ok) {
-    throw new Error(`AniList API Error: ${response.statusText} - ${JSON.stringify(json.errors)}`);
+    const errorBody = await response.text();
+    throw new Error(`GraphQL API Error: ${response.status} - ${errorBody}`);
+  }
+
+  const json = await response.json();
+  if (json.errors) {
+    // It's useful to log the query that failed for debugging.
+    console.error("GraphQL Query Failed:", { query, variables, errors: json.errors });
+    throw new Error(`GraphQL Query Error: ${JSON.stringify(json.errors)}`);
   }
   
-  if (json.errors) {
-    console.error('AniList GraphQL Errors:', json.errors);
-    throw new Error(`AniList GraphQL Error: ${json.errors.map((e: any) => e.message).join(', ')}`);
-  }
   return json.data;
 }
 
-// Data Transformation
-const transformApiMedia = (apiMedia: any): Media => {
-    if (!apiMedia) return {} as Media; // Should not happen with correct queries
+// Data Transformation from AniList GraphQL format to our internal Media type.
+const transformGraphqlMedia = (apiMedia: any): Media => {
+    if (!apiMedia || !apiMedia.id) return {} as Media;
+
     return {
-        ...apiMedia,
+        id: apiMedia.id,
+        title: apiMedia.title,
+        coverImage: apiMedia.coverImage,
+        format: apiMedia.format,
+        status: apiMedia.status,
+        episodes: apiMedia.episodes,
+        chapters: apiMedia.chapters,
+        averageScore: apiMedia.averageScore,
         description: apiMedia.description || '',
         genres: apiMedia.genres || [],
-        userProgress: apiMedia.mediaListEntry ? {
-            progress: apiMedia.mediaListEntry.progress,
-            score: apiMedia.mediaListEntry.score
-        } : undefined,
+        nextAiringEpisode: apiMedia.nextAiringEpisode,
     };
 };
 
-const transformEntries = (data: any): MediaList[] => {
-    if (!data || !data.MediaListCollection || !data.MediaListCollection.lists) return [];
-    return data.MediaListCollection.lists.flatMap((list: any) => 
-        list.entries.map((entry: any) => ({
-            progress: entry.progress,
-            score: entry.score,
-            updatedAt: entry.updatedAt,
-            media: transformApiMedia(entry.media),
-        }))
-    );
+// Helper to process a page of media from a GraphQL response.
+const getMediaListFromPage = (data: any): Media[] => {
+    if (data && data.Page && data.Page.media && Array.isArray(data.Page.media)) {
+        return data.Page.media.map(transformGraphqlMedia).filter(m => m.id);
+    }
+    return [];
+}
+
+
+// --- Rewritten API Functions ---
+
+export const getTrendingAnime = async (): Promise<Media[]> => {
+  const query = `
+    query ($page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        media(type: ANIME, sort: TRENDING_DESC) {
+          ...media
+        }
+      }
+    }
+    ${mediaFragment}
+  `;
+  const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
+  return getMediaListFromPage(data);
 };
 
+export const getPopularAnime = async (): Promise<Media[]> => {
+  const query = `
+    query ($page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        media(type: ANIME, sort: POPULARITY_DESC) {
+          ...media
+        }
+      }
+    }
+    ${mediaFragment}
+  `;
+  const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
+  return getMediaListFromPage(data);
+};
 
-const getMediaPage = async (variables: object, token?: string | null): Promise<Media[]> => {
+export const getPopularManga = async (): Promise<Media[]> => {
     const query = `
-      query ($page: Int, $perPage: Int, $sort: [MediaSort], $type: MediaType, $search: String, $format_in: [MediaFormat], $status_in: [MediaStatus], $genre_in: [String]) {
+      query ($page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
-          media(sort: $sort, type: $type, search: $search, isAdult: false, format_in: $format_in, status_in: $status_in, genre_in: $genre_in) {
-            ...mediaFields
+          media(type: MANGA, sort: POPULARITY_DESC) {
+            ...media
           }
         }
       }
-      ${mediaFieldsFragment}
+      ${mediaFragment}
     `;
-    const data = await fetchAniList(query, variables, token);
-    return data.Page.media.map(transformApiMedia);
-};
+    const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
+    return getMediaListFromPage(data);
+  };
 
-export const getTrendingAnime = async (token?: string | null): Promise<Media[]> => {
-  return getMediaPage({ page: 1, perPage: 10, sort: 'TRENDING_DESC', type: 'ANIME' }, token);
-};
-
-export const getPopularAnime = async (token?: string | null): Promise<Media[]> => {
-  return getMediaPage({ page: 1, perPage: 15, sort: 'POPULARITY_DESC', type: 'ANIME' }, token);
-};
-
-export const getPopularManga = async (token?: string | null): Promise<Media[]> => {
-  return getMediaPage({ page: 1, perPage: 15, sort: 'POPULARITY_DESC', type: 'MANGA' }, token);
-};
 
 interface SearchFilters {
     query: string;
@@ -126,106 +147,82 @@ interface SearchFilters {
     sort?: MediaSort;
 }
 
-export const searchMedia = async (filters: SearchFilters, token?: string | null): Promise<Media[]> => {
+export const searchMedia = async (filters: SearchFilters): Promise<Media[]> => {
   if (!filters.query && !filters.genres?.length) return [];
-  const variables = {
-    search: filters.query || undefined,
-    type: filters.type,
-    format_in: filters.formats?.length ? filters.formats : undefined,
-    status_in: filters.stati?.length ? filters.stati : undefined,
-    genre_in: filters.genres?.length ? filters.genres : undefined,
-    sort: filters.sort || MediaSort.POPULARITY_DESC,
-    page: 1,
-    perPage: 25
-  };
-  return getMediaPage(variables, token);
-};
 
-export const getUser = async (token: string): Promise<User> => {
   const query = `
-    query {
-      Viewer {
-        id
-        name
-        avatar {
-          large
+    query ($page: Int, $perPage: Int, $search: String, $type: MediaType, $sort: [MediaSort], $genre_in: [String], $format_in: [MediaFormat], $status_in: [MediaStatus]) {
+      Page(page: $page, perPage: $perPage) {
+        media(search: $search, type: $type, sort: $sort, genre_in: $genre_in, format_in: $format_in, status_in: $status_in) {
+          ...media
         }
       }
     }
+    ${mediaFragment}
   `;
-  const data = await fetchAniList(query, {}, token);
-  return data.Viewer;
+
+  const variables: any = {
+      page: 1,
+      perPage: 30,
+      sort: filters.sort ? [filters.sort] : [MediaSort.POPULARITY_DESC],
+  };
+
+  if (filters.query) variables.search = filters.query;
+  if (filters.type) variables.type = filters.type;
+  if (filters.genres?.length) variables.genre_in = filters.genres;
+  if (filters.formats?.length) variables.format_in = filters.formats;
+  if (filters.stati?.length) variables.status_in = filters.stati;
+
+  const data = await fetchFromGraphQL(query, variables);
+  return getMediaListFromPage(data);
 };
 
-const userMediaListQuery = `
-  query ($userId: Int, $type: MediaType, $status_in: [MediaListStatus]) {
-    MediaListCollection(userId: $userId, type: $type, status_in: $status_in, sort: UPDATED_TIME_DESC) {
-      lists {
-        name
-        entries {
-          progress
-          score(format: POINT_100)
-          updatedAt
-          media {
-            ...mediaFields
+export const getMediaDetails = async (mediaId: number): Promise<Media> => {
+  const query = `
+    query ($id: Int) {
+      Media(id: $id) {
+        ...media
+      }
+    }
+    ${mediaFragment}
+  `;
+  const data = await fetchFromGraphQL(query, { id: mediaId });
+  return transformGraphqlMedia(data.Media);
+};
+
+export const getMultipleMediaDetails = async (ids: number[]): Promise<Media[]> => {
+    if (ids.length === 0) return [];
+    
+    const query = `
+      query ($page: Int, $perPage: Int, $id_in: [Int]) {
+        Page(page: $page, perPage: $perPage) {
+          media(id_in: $id_in, sort: ID) {
+            ...media
           }
         }
       }
-    }
-  }
-  ${mediaFieldsFragment}
-`;
-
-const fetchUserMediaList = async (userId: number, token: string, status_in: MediaListStatus[]): Promise<MediaList[]> => {
-    const animePromise = fetchAniList(userMediaListQuery, { userId, type: 'ANIME', status_in }, token);
-    const mangaPromise = fetchAniList(userMediaListQuery, { userId, type: 'MANGA', status_in }, token);
-
-    const [animeData, mangaData] = await Promise.all([animePromise, mangaPromise]);
-  
-    const animeList = transformEntries(animeData);
-    const mangaList = transformEntries(mangaData);
-    
-    // Sort combined list by update time descending
-    return [...animeList, ...mangaList].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-}
-
-export const getUserList = async (userId: number, token: string): Promise<MediaList[]> => {
-  return fetchUserMediaList(userId, token, [MediaListStatus.CURRENT, MediaListStatus.REPEATING, MediaListStatus.PLANNING]);
-};
-
-export const getUserMediaHistory = async (userId: number, token: string): Promise<MediaList[]> => {
-    return fetchUserMediaList(userId, token, [MediaListStatus.CURRENT, MediaListStatus.REPEATING, MediaListStatus.PAUSED, MediaListStatus.COMPLETED]);
-};
-
-export const getMediaDetails = async (mediaId: number, format: MediaFormat, token?: string | null): Promise<Media> => {
-  const isManga = format === MediaFormat.MANGA || format === MediaFormat.NOVEL || format === MediaFormat.ONE_SHOT;
-  const type = isManga ? 'MANGA' : 'ANIME';
-
-  const query = `
-    query ($id: Int, $type: MediaType) {
-      Media(id: $id, type: $type) {
-        ...mediaFields
-      }
-    }
-    ${mediaFieldsFragment}
-  `;
-  
-  const data = await fetchAniList(query, { id: mediaId, type }, token);
-  return transformApiMedia(data.Media);
-};
-
-export const updateMediaProgress = async (mediaId: number, progress: number, token:string): Promise<any> => {
-    const query = `
-        mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus) {
-            SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status) {
-                id
-                progress
-                status
-            }
-        }
+      ${mediaFragment}
     `;
-    return fetchAniList(query, { mediaId, progress, status: MediaListStatus.CURRENT }, token);
-}
+
+    // AniList API has a limit of 50 per page. We need to chunk requests if we have more IDs.
+    const CHUNK_SIZE = 50;
+    const idChunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        idChunks.push(ids.slice(i, i + CHUNK_SIZE));
+    }
+
+    const promises = idChunks.map(chunk => 
+        fetchFromGraphQL(query, {
+            id_in: chunk,
+            page: 1,
+            perPage: CHUNK_SIZE
+        }).then(getMediaListFromPage)
+    );
+
+    const chunkedResults = await Promise.all(promises);
+    return chunkedResults.flat();
+};
+
 
 export const getGenreCollection = async (): Promise<Genre[]> => {
     const query = `
@@ -233,6 +230,9 @@ export const getGenreCollection = async (): Promise<Genre[]> => {
             GenreCollection
         }
     `;
-    const data = await fetchAniList(query);
-    return data.GenreCollection.map((name: string) => ({ name }));
+    const data = await fetchFromGraphQL(query);
+    if (data && Array.isArray(data.GenreCollection)) {
+        return data.GenreCollection.map((name: string) => ({ name })).sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return [];
 };

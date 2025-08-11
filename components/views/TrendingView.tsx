@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect } from 'react';
 import { Media, MediaList, MediaStatus } from '../../types';
-import { getTrendingAnime, getPopularAnime, getPopularManga, getUserMediaHistory } from '../../services/anilistService';
+import { getTrendingAnime, getPopularAnime, getPopularManga } from '../../services/anilistService';
 import MediaCard from '../MediaCard';
 import Spinner from '../Spinner';
 import { useAuth } from '../../context/AuthContext';
+import { PlayIcon } from '../icons';
 
-// Helper component defined in the same file as per the request.
 interface MediaRowProps {
   title: string;
   mediaList: Media[];
@@ -15,13 +14,13 @@ interface MediaRowProps {
 }
 
 const MediaRow: React.FC<MediaRowProps> = ({ title, mediaList, isLoading, onMediaSelect }) => (
-  <section className="mb-8">
-    <h2 className="text-xl font-bold text-slate-100 px-4 mb-3">{title}</h2>
+  <section className="mb-10">
+    <h2 className="text-2xl font-bold text-gray-100 px-4 md:px-6 mb-4">{title}</h2>
     {isLoading && mediaList.length === 0 ? <Spinner /> : (
       <div className="relative">
-        <div className="flex space-x-4 overflow-x-auto px-4 pb-4 scrollbar-hide">
+        <div className="flex space-x-4 overflow-x-auto px-4 md:px-6 pb-4 scrollbar-hide">
           {mediaList.map(media => (
-            <div key={media.id} className="w-32 md:w-40 flex-shrink-0">
+            <div key={media.id} className="w-36 md:w-44 flex-shrink-0">
               <MediaCard media={media} onClick={() => onMediaSelect(media)} />
             </div>
           ))}
@@ -34,7 +33,7 @@ const MediaRow: React.FC<MediaRowProps> = ({ title, mediaList, isLoading, onMedi
 const LastWatchedCard: React.FC<{ list: MediaList[], onMediaSelect: (media: Media) => void }> = ({ list, onMediaSelect }) => {
     const lastWatched = list
         .filter(item => item.progress > 0 && item.media.status !== MediaStatus.FINISHED)
-        .sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] || list[0];
+        .sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
     if (!lastWatched) return null;
 
@@ -43,17 +42,27 @@ const LastWatchedCard: React.FC<{ list: MediaList[], onMediaSelect: (media: Medi
     const progressPercentage = total > 0 ? (progress / total) * 100 : 0;
     
     return (
-        <section className="mb-8 px-4">
-            <h2 className="text-xl font-bold text-slate-100 mb-3">Continuar Viendo</h2>
-            <button onClick={() => onMediaSelect(media)} className="w-full bg-slate-800 rounded-lg overflow-hidden flex items-center shadow-lg text-left transition-transform duration-300 ease-in-out active:scale-95 md:hover:scale-[1.02]">
-                <img src={media.coverImage.large || media.coverImage.extraLarge} alt={media.title.romaji} className="w-20 h-full object-cover flex-shrink-0"/>
-                <div className="p-3 flex-grow">
-                    <h3 className="font-bold text-white truncate">{media.title.english || media.title.romaji}</h3>
-                    <p className="text-sm text-slate-300">
-                        {media.format === 'MANGA' ? 'Capítulo' : 'Episodio'} {progress}
-                    </p>
-                    <div className="w-full bg-slate-700 rounded-full h-1.5 mt-2 overflow-hidden">
-                      <div className="bg-indigo-500 h-1.5" style={{width: `${progressPercentage}%`}}></div>
+        <section className="mb-10 px-4 md:px-6">
+            <h2 className="text-2xl font-bold text-gray-100 mb-4">Continuar Viendo</h2>
+            <button 
+                onClick={() => onMediaSelect(media)} 
+                className="w-full h-48 bg-gray-900 rounded-2xl overflow-hidden text-left relative flex items-end p-4 group transition-transform duration-300 ease-in-out active:scale-95 md:hover:scale-[1.02] shadow-lg"
+            >
+                <img src={media.coverImage.extraLarge} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity duration-300" style={{ maskImage: 'linear-gradient(to top, black 20%, transparent 100%)' }}/>
+                <div className="absolute top-0 left-0 right-0 h-2/3 bg-gradient-to-t from-gray-900/50 to-transparent"></div>
+                <div className="relative z-10 flex items-center w-full gap-4">
+                    <img src={media.coverImage.large} alt={media.title.romaji} className="w-20 h-28 object-cover rounded-md flex-shrink-0 shadow-2xl"/>
+                    <div className="flex-grow min-w-0">
+                        <h3 className="font-bold text-white truncate text-lg">{media.title.english || media.title.romaji}</h3>
+                        <p className="text-sm text-gray-300">
+                            {media.format === 'MANGA' ? 'Capítulo' : 'Episodio'} {progress + 1}
+                        </p>
+                         <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3 overflow-hidden">
+                            <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full" style={{width: `${progressPercentage}%`}}></div>
+                        </div>
+                    </div>
+                    <div className="bg-indigo-600 rounded-full p-3 shadow-lg ml-auto flex-shrink-0">
+                       <PlayIcon className="w-6 h-6 text-white"/>
                     </div>
                 </div>
             </button>
@@ -68,21 +77,20 @@ const TrendingView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onM
   const [popularManga, setPopularManga] = useState<Media[]>([]);
   const [userHistory, setUserHistory] = useState<MediaList[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user, token } = useAuth();
+  const { user, getHistoryList } = useAuth();
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
         const publicMediaPromises = [
-          getTrendingAnime(token),
-          getPopularAnime(token),
-          getPopularManga(token),
+          getTrendingAnime(),
+          getPopularAnime(),
+          getPopularManga(),
         ];
         
-        if (user && token) {
-          const userHistoryData = await getUserMediaHistory(user.id, token);
-          setUserHistory(userHistoryData);
+        if (user) {
+          getHistoryList().then(setUserHistory);
         } else {
           setUserHistory([]);
         }
@@ -93,7 +101,6 @@ const TrendingView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onM
         setPopularAnime(popularAnimeData);
         setPopularManga(popularMangaData);
 
-
       } catch (error) {
         console.error("Failed to fetch trending media:", error);
       } finally {
@@ -101,24 +108,24 @@ const TrendingView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onM
       }
     };
     fetchData();
-  }, [user, token]);
+  }, [user, getHistoryList]);
 
   return (
-    <div className="pt-6">
-      <header className="px-4 mb-6">
-        <h1 className="text-3xl font-extrabold tracking-tight text-white">
-          Animaid
+    <div className="pt-8">
+      <header className="px-4 md:px-6 mb-8">
+        <h1 className="text-4xl font-black tracking-tighter text-white">
+          <span className="bg-gradient-to-r from-indigo-400 to-purple-400 text-transparent bg-clip-text">Animaid</span>
         </h1>
-        <p className="text-slate-400 mt-1">
-          {user ? `Bienvenido de nuevo, ${user.name}` : 'Descubre tu próximo anime favorito.'}
+        <p className="text-gray-400 mt-1">
+          {user ? `Bienvenido de nuevo, ${user.username}` : 'Descubre tu próximo anime favorito.'}
         </p>
       </header>
 
-      {user && !isLoading && userHistory.length > 0 && <LastWatchedCard list={userHistory} onMediaSelect={onMediaSelect} />}
+      {user && !isLoading && <LastWatchedCard list={userHistory} onMediaSelect={onMediaSelect} />}
 
-      <MediaRow title="Tendencias del momento" mediaList={trending} isLoading={isLoading} onMediaSelect={onMediaSelect} />
-      <MediaRow title="Anime popular" mediaList={popularAnime} isLoading={isLoading} onMediaSelect={onMediaSelect} />
-      <MediaRow title="Manga popular" mediaList={popularManga} isLoading={isLoading} onMediaSelect={onMediaSelect} />
+      <MediaRow title="Tendencias del Momento" mediaList={trending} isLoading={isLoading} onMediaSelect={onMediaSelect} />
+      <MediaRow title="Anime Popular" mediaList={popularAnime} isLoading={isLoading} onMediaSelect={onMediaSelect} />
+      <MediaRow title="Manga Popular" mediaList={popularManga} isLoading={isLoading} onMediaSelect={onMediaSelect} />
     </div>
   );
 };

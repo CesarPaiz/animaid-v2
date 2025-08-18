@@ -1,3 +1,5 @@
+
+
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { createClient, type SupabaseClient, type Session, type User as AuthUser, type AuthError } from '@supabase/supabase-js';
 import { User, Media, MediaList, MediaListStatus } from '../types';
@@ -37,7 +39,6 @@ export type Database = {
           media_type?: "ANIME" | "MANGA";
           updated_at?: string;
         };
-        Relationships: [];
       };
       profiles: {
         Row: {
@@ -58,30 +59,22 @@ export type Database = {
           avatar_url?: string | null;
           updated_at?: string | null;
         };
-        Relationships: [];
       };
-    };
-    Views: {
-      [_ in never]: never;
-    };
-    Functions: {
-      [_ in never]: never;
-    };
-    Enums: {
-      [_ in never]: never;
-    };
-    CompositeTypes: {
-      [_ in never]: never;
     };
   };
 };
+
 
 type MediaEntryRow = Database['public']['Tables']['media_entries']['Row'];
 type MediaEntryInsert = Database['public']['Tables']['media_entries']['Insert'];
 
 const supabaseUrl = "https://bhlhsvfgvfghgjwwdwzc.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJobGhzdmZndmZnaGdqd3dkd3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NzM3NzQsImV4cCI6MjA3MDQ0OTc3NH0.ehcx-B1VhfKa5TFbpPcpkecB1cBIDUIHzTnNha372CY";
-export const supabase: SupabaseClient<Database> = createClient<Database>(supabaseUrl, supabaseAnonKey);
+
+export const supabase: SupabaseClient<Database> | null = 
+  (supabaseUrl && supabaseAnonKey) 
+    ? createClient<Database>(supabaseUrl, supabaseAnonKey)
+    : null;
 
 const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[]> => {
     if (!entries || entries.length === 0) return [];
@@ -144,6 +137,7 @@ interface AuthContextType {
   toggleDebugMode: () => void;
   showNsfw: boolean;
   toggleShowNsfw: () => void;
+  isSupabaseConfigured: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -174,6 +168,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
   });
+  const isSupabaseConfigured = !!supabase;
 
   const toggleDebugMode = useCallback(() => {
     setIsDebugMode(prev => {
@@ -207,14 +202,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const handleUser = useCallback(async (authUser: AuthUser | null) => {
-    if (authUser) {
+    if (authUser && supabase) {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`*`)
+        .select(`username, avatar_url`)
         .eq('id', authUser.id)
         .single();
       
-      if (error) console.error("Error al obtener el perfil de usuario:", error);
+      if (error && error.code !== 'PGRST116') {
+        console.error("Error al obtener el perfil de usuario:", error)
+      };
       
       const newUser = {
         id: authUser.id,
@@ -223,7 +220,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         avatar_url: profile?.avatar_url || undefined
       };
       
-      // Previene re-renders si el objeto de usuario es idéntico, rompiendo bucles.
       setUser(currentUser => {
           if (JSON.stringify(currentUser) === JSON.stringify(newUser)) {
               return currentUser;
@@ -237,18 +233,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const fetchSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        await handleUser(session?.user ?? null);
-        setAuthStatus(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
+        if (!supabase) {
+            setAuthStatus(prev => ({ ...prev, isLoading: false }));
+            return;
+        }
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            setSession(session);
+            await handleUser(session?.user ?? null);
+        } catch (error) {
+            console.error("Error al obtener la sesión en la carga inicial:", error);
+            setSession(null);
+            setUser(null);
+        } finally {
+            setAuthStatus(prev => ({ ...prev, isLoading: false }));
+        }
     };
     fetchSession();
+
+    if (!supabase) return;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         await handleUser(session?.user ?? null);
-        setAuthStatus(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
+        setAuthStatus(prev => ({ ...prev, isLoading: false }));
       }
     );
 
@@ -258,6 +267,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [handleUser]);
 
   const signIn = useCallback(async (email: string, pass: string): Promise<{ error: AuthError | null }> => {
+    if (!supabase) {
+        setAuthStatus({ isLoading: false, message: "Error: Supabase no está configurado.", isError: true });
+        return { error: { message: "Supabase client is not initialized." } as AuthError };
+    }
     setAuthStatus({ isLoading: true, message: 'Iniciando sesión...', isError: false });
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) {
@@ -270,17 +283,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [clearAuthStatus]);
 
   const signOut = useCallback(async () => {
+    if (!supabase) return;
     setAuthStatus({ isLoading: true, message: 'Cerrando sesión...', isError: false });
     await supabase.auth.signOut();
-    // El listener onAuthStateChange se encargará de limpiar el estado del usuario y la sesión.
     setAuthStatus({ isLoading: false, message: null, isError: false });
   }, []);
   
   const getMediaEntry = useCallback(async (mediaId: number): Promise<MediaEntryRow | null> => {
-      if (!user) return null;
+      if (!user || !supabase) return null;
       const { data, error } = await supabase
         .from('media_entries')
-        .select('*')
+        .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
         .eq('user_id', user.id)
         .eq('media_id', mediaId)
         .single();
@@ -292,7 +305,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user]);
   
   const upsertMediaEntry = useCallback(async (entry: MediaEntryUpsert): Promise<MediaEntryRow | null> => {
-      if (!user) return null;
+      if (!user || !supabase) return null;
       const entryToUpsert: MediaEntryInsert = {
           user_id: user.id,
           media_id: entry.media_id,
@@ -305,7 +318,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { data, error } = await supabase
           .from('media_entries')
           .upsert([entryToUpsert], { onConflict: 'user_id,media_id' })
-          .select()
+          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
           .single();
 
       if (error) {
@@ -316,21 +329,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user]);
 
   const getLibraryList = useCallback(async (): Promise<MediaList[]> => {
-      if (!user) return [];
+      if (!user || !supabase) return [];
       const { data: entries, error } = await supabase
           .from('media_entries')
-          .select('*')
+          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
           .eq('user_id', user.id)
           .in('status', ['CURRENT', 'REPEATING', 'PLANNING']);
       if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
+      return _fetchAndMergeMedia(entries || []);
   }, [user]);
   
   const getFullLibraryList = useCallback(async (): Promise<MediaList[]> => {
-    if (!user) return [];
+    if (!user || !supabase) return [];
     const { data: entries, error } = await supabase
         .from('media_entries')
-        .select('*')
+        .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
         
@@ -338,23 +351,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error("Error al obtener la librería completa:", error); 
         return []; 
     }
-    return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
+    return _fetchAndMergeMedia(entries || []);
   }, [user]);
 
   const getHistoryList = useCallback(async (): Promise<MediaList[]> => {
-      if (!user) return [];
+      if (!user || !supabase) return [];
       const { data: entries, error } = await supabase
           .from('media_entries')
-          .select('*')
+          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
           .eq('user_id', user.id)
           .in('status', ['CURRENT', 'REPEATING', 'PAUSED', 'COMPLETED'])
           .order('updated_at', { ascending: false })
           .limit(50);
       if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
+      return _fetchAndMergeMedia(entries || []);
   }, [user]);
 
-  const value = useMemo(() => ({ 
+  const value: AuthContextType = useMemo(() => ({ 
       user, 
       session, 
       signIn, 
@@ -369,9 +382,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isDebugMode,
       toggleDebugMode,
       showNsfw,
-      toggleShowNsfw
+      toggleShowNsfw,
+      isSupabaseConfigured,
     }), [
-      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw
+      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw, isSupabaseConfigured
   ]);
 
   return (

@@ -38,7 +38,7 @@ const AuthStatusOverlay: React.FC<{ status: any; onClose: () => void; }> = ({ st
 };
 
 const LoginView: React.FC = () => {
-    const { signIn, authStatus } = useAuth();
+    const { signIn, authStatus, isSupabaseConfigured } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
@@ -47,6 +47,24 @@ const LoginView: React.FC = () => {
         if (!email || !password) return;
         signIn(email, password);
     };
+    
+    if (!isSupabaseConfigured) {
+        return (
+            <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-950 p-4 text-center">
+                 <header className="text-center mb-10">
+                    <h1 className="text-5xl font-black tracking-tighter text-white">
+                        <span className="bg-gradient-to-r from-red-500 to-orange-500 text-transparent bg-clip-text">Error de Configuración</span>
+                    </h1>
+                </header>
+                <div className="w-full max-w-md bg-gray-900 p-6 rounded-2xl shadow-lg">
+                    <p className="text-red-400 text-lg font-semibold mb-4">Animaid no está configurado correctamente.</p>
+                    <p className="text-gray-300">
+                        Parece que las variables de entorno para Supabase no están definidas. Por favor, sigue las instrucciones en el archivo <code className="bg-gray-800 text-indigo-300 p-1 rounded-sm">README.md</code> para configurar tu proyecto y añadir las variables <code className="bg-gray-800 text-indigo-300 p-1 rounded-sm">SUPABASE_URL</code> y <code className="bg-gray-800 text-indigo-300 p-1 rounded-sm">SUPABASE_ANON_KEY</code> a tu entorno.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-950 p-4">

@@ -303,8 +303,12 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
           <ArrowLeftIcon className="w-6 h-6" />
         </button>
         <div className="text-center flex-1 mx-4 min-w-0">
-          <h1 className="text-base font-bold truncate">{media.title.english || media.title.romaji}</h1>
-          <h2 className="text-sm text-gray-300">Episodio {episodeNumber}</h2>
+            <h1 className="text-2xl font-black tracking-tighter text-white">
+                <span className="animated-gradient">Animaid</span>
+            </h1>
+            <h2 className="text-sm text-gray-400 truncate mt-0.5">
+                {media.title.english || media.title.romaji} - Ep. {episodeNumber}
+            </h2>
         </div>
         <div className="w-10 h-10 flex-shrink-0" />
       </header>

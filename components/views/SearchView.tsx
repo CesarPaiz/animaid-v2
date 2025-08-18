@@ -130,8 +130,9 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
     return (
         <div className="pt-8">
             <header className="px-4 md:px-6 lg:px-8 mb-6">
-                <h1 className="text-4xl font-black tracking-tighter text-white mb-4">Buscar</h1>
-                <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center">
+                <h1 className="text-4xl font-black tracking-tighter text-white"><span className="animated-gradient">Animaid</span></h1>
+                <p className="text-gray-400 mt-1">Busca tu próximo anime o manga favorito.</p>
+                <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center mt-4">
                     <div className="relative flex-grow">
                         <input
                             type="text"

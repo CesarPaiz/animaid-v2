@@ -95,7 +95,8 @@ const SettingsView: React.FC = () => {
     return (
         <div className="pt-8">
             <header className="px-4 md:px-6 lg:px-8 mb-8">
-                <h1 className="text-4xl font-black tracking-tighter text-white">Ajustes</h1>
+                <h1 className="text-4xl font-black tracking-tighter text-white"><span className="animated-gradient">Animaid</span></h1>
+                <p className="text-gray-400 mt-1">Gestiona tu cuenta y preferencias.</p>
             </header>
             <div className="px-4 md:px-6 lg:px-8 max-w-3xl mx-auto space-y-8">
                 <SettingsSection title="Cuenta">

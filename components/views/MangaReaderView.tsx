@@ -175,8 +175,12 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
         <header className={`p-3 bg-gray-950/80 backdrop-blur-md flex items-center z-10 flex-shrink-0 border-b border-gray-800/80 absolute top-0 left-0 right-0 transition-transform duration-300 ${showControls ? 'translate-y-0' : '-translate-y-full'}`}>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60"><ArrowLeftIcon className="w-6 h-6" /></button>
             <div className="text-center flex-1 mx-2 min-w-0">
-                <h1 className="text-base font-bold truncate">{media.title.english || media.title.romaji}</h1>
-                {activeProvider ? <h2 className="text-sm text-gray-300">Cap. {chapterNumber} (p. {currentPage}/{pages.length})</h2> : <h2 className="text-sm text-gray-300">Cap. {chapterNumber}</h2>}
+                 <h1 className="text-2xl font-black tracking-tighter text-white">
+                    <span className="animated-gradient">Animaid</span>
+                 </h1>
+                 <h2 className="text-sm text-gray-400 truncate mt-0.5">
+                    {media.title.english || media.title.romaji} - Cap. {chapterNumber}
+                 </h2>
             </div>
              {activeProvider ? (<button onClick={() => setActiveProvider(null)} className="text-sm bg-gray-800 px-3 py-2 rounded-lg capitalize hover:bg-gray-700">Cambiar</button>) : <div className="w-24 h-10"/>}
         </header>

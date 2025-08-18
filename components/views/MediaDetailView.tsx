@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Media, MediaListStatus, MediaFormat, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeftIcon, PlayIcon, StarIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons';
+import { ArrowLeftIcon, PlayIcon, StarIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpDownIcon } from '../icons';
 import Spinner from '../Spinner';
 
 interface MediaDetailViewProps {
@@ -25,6 +25,59 @@ const STATUS_OPTIONS: { key: MediaListStatus, label: string }[] = [
     { key: MediaListStatus.REPEATING, label: "Repitiendo" },
     { key: MediaListStatus.DROPPED, label: "Abandonado" },
 ];
+
+const StatusSelector: React.FC<{
+    currentStatus: MediaListStatus;
+    onStatusChange: (status: MediaListStatus) => void;
+}> = ({ currentStatus, onStatusChange }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const currentOption = STATUS_OPTIONS.find(opt => opt.key === currentStatus);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [wrapperRef]);
+
+    return (
+        <div ref={wrapperRef} className="relative w-40 h-full">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="h-full w-full flex items-center justify-between bg-gray-700/80 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+                <span>{currentOption?.label || 'Estado'}</span>
+                <ChevronUpDownIcon className="w-5 h-5 text-gray-400" />
+            </button>
+            {isOpen && (
+                <div className="absolute bottom-full mb-2 w-full bg-gray-800 rounded-lg shadow-2xl z-20 overflow-hidden border border-gray-700 animate-fade-in">
+                    <div className="flex flex-col">
+                        {STATUS_OPTIONS.map(opt => (
+                            <button
+                                key={opt.key}
+                                onClick={() => {
+                                    onStatusChange(opt.key);
+                                    setIsOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 text-sm font-semibold transition-colors duration-150 ${
+                                    opt.key === currentStatus
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'text-gray-300 hover:bg-indigo-500/40'
+                                }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const generatePagination = (currentPage: number, totalPages: number): (number | '...')[] => {
     if (totalPages <= 7) {
@@ -223,7 +276,7 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media: initialMedia, 
             return (
                  <button 
                     onClick={() => handleStatusUpdate(MediaListStatus.PLANNING)} 
-                    className="h-full aspect-square flex items-center justify-center bg-gray-700/80 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    className="h-full w-12 flex items-center justify-center bg-gray-700/80 text-white rounded-lg hover:bg-gray-700 transition-colors"
                     aria-label="Añadir a Mi Lista"
                  >
                     <PlusIcon className="w-6 h-6"/>
@@ -232,13 +285,10 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media: initialMedia, 
         }
 
         return (
-            <select 
-                value={media.userProgress.status}
-                onChange={(e) => handleStatusUpdate(e.target.value as MediaListStatus)}
-                className="h-full bg-gray-700/80 text-white font-bold py-3 pl-4 pr-8 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-                {STATUS_OPTIONS.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
-            </select>
+            <StatusSelector 
+                currentStatus={media.userProgress.status}
+                onStatusChange={handleStatusUpdate}
+            />
         )
     };
 
@@ -294,10 +344,14 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media: initialMedia, 
                     onLoad={() => setIsBannerLoaded(true)}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/60 to-transparent"></div>
-                <header className="absolute top-0 left-0 right-0 p-4 z-10">
-                    <button onClick={onClose} className="p-2 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-lg transition-colors" aria-label="Volver">
+                <header className="absolute top-0 left-0 right-0 p-4 z-10 flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent">
+                    <button onClick={onClose} className="p-2 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-colors" aria-label="Volver">
                         <ArrowLeftIcon className="w-6 h-6" />
                     </button>
+                    <h1 className="text-3xl font-black tracking-tighter text-white">
+                        <span className="animated-gradient">Animaid</span>
+                    </h1>
+                    <div className="w-10 h-10 flex-shrink-0" />
                 </header>
             </div>
 
@@ -314,9 +368,9 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media: initialMedia, 
                                 <span key={genre} className="bg-gray-800 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">{genre}</span>
                             ))}
                         </div>
-                         <div className="flex items-stretch gap-4 mt-4">
+                         <div className="flex items-stretch gap-2 mt-4">
                             {renderPlaybackButton()}
-                            {user && <div className="flex-shrink-0">{renderStatusControls()}</div>}
+                            {user && <div className="flex-shrink-0 h-12">{renderStatusControls()}</div>}
                         </div>
                     </div>
                 </div>

@@ -82,7 +82,8 @@ const LibraryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
         return (
              <div className="pt-8 md:px-6 lg:px-8">
                 <header className="px-4 md:px-0 mb-6">
-                    <h1 className="text-4xl font-black tracking-tighter text-white">Mi Lista</h1>
+                    <h1 className="text-4xl font-black tracking-tighter text-white"><span className="animated-gradient">Animaid</span></h1>
+                    <p className="text-gray-400 mt-1">Cargando tu lista...</p>
                 </header>
                 <Spinner />
             </div>
@@ -92,7 +93,7 @@ const LibraryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
     return (
         <div className="pt-8 md:px-6 lg:px-8">
             <header className="px-4 md:px-0 mb-6">
-                <h1 className="text-4xl font-black tracking-tighter text-white">Mi Lista</h1>
+                <h1 className="text-4xl font-black tracking-tighter text-white"><span className="animated-gradient">Animaid</span></h1>
                 <p className="text-gray-400 mt-1">Tu progreso de anime y manga, organizado.</p>
             </header>
 

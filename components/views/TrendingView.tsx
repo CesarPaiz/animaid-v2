@@ -48,8 +48,8 @@ const LastWatchedCard: React.FC<{ list: MediaList[], onMediaSelect: (media: Medi
                 onClick={() => onMediaSelect(media)} 
                 className="w-full h-48 bg-gray-900 rounded-2xl overflow-hidden text-left relative flex items-end p-4 group transition-transform duration-300 ease-in-out active:scale-95 md:hover:scale-[1.02] shadow-lg"
             >
-                <img src={media.bannerImage || media.coverImage.extraLarge} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity duration-300" style={{ maskImage: 'linear-gradient(to top, black 20%, transparent 100%)' }}/>
-                <div className="absolute top-0 left-0 right-0 h-2/3 bg-gradient-to-t from-gray-900/50 to-transparent"></div>
+                <img src={media.bannerImage || media.coverImage.extraLarge} alt="" className="absolute inset-0 w-full h-full object-cover opacity-25 group-hover:opacity-35 transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/40 to-transparent"></div>
                 <div className="relative z-10 flex items-center w-full gap-4">
                     <img src={media.coverImage.large} alt={media.title.romaji} className="w-20 h-28 object-cover rounded-md flex-shrink-0 shadow-2xl"/>
                     <div className="flex-grow min-w-0">
@@ -114,7 +114,7 @@ const TrendingView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onM
     <div className="pt-8">
       <header className="px-4 md:px-6 lg:px-8 mb-8">
         <h1 className="text-4xl font-black tracking-tighter text-white">
-          <span className="bg-gradient-to-r from-indigo-400 to-purple-400 text-transparent bg-clip-text">Animaid</span>
+          <span className="animated-gradient">Animaid</span>
         </h1>
         <p className="text-gray-400 mt-1">
           {user ? `Bienvenido de nuevo, ${user.username}` : 'Descubre tu próximo anime favorito.'}

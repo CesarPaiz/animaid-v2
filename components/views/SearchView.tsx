@@ -3,7 +3,8 @@ import { Media, MediaFormat, MediaStatus, MediaSort, Genre } from '../../types';
 import { searchMedia, getGenreCollection } from '../../services/anilistService';
 import MediaCard from '../MediaCard';
 import Spinner from '../Spinner';
-import { SearchIcon, FilterIcon, CloseIcon } from '../icons';
+import { SearchIcon, FilterIcon, CloseIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons';
+import { useAuth } from '../../context/AuthContext';
 
 interface FilterState {
     query: string;
@@ -85,37 +86,50 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
     const [isLoading, setIsLoading] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [allGenres, setAllGenres] = useState<Genre[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasNextPage, setHasNextPage] = useState(false);
+    const { showNsfw } = useAuth();
     
     useEffect(() => {
         getGenreCollection().then(setAllGenres).catch(e => console.error("Failed to fetch genres", e));
     }, []);
 
-    const performSearch = useCallback(async () => {
-        if (!filters.query && !filters.genres?.length) return;
+    const performSearch = useCallback(async (page: number, isNewSearch = false) => {
+        if (!filters.query && !filters.genres?.length) {
+            setResults([]);
+            return;
+        }
+
         setIsLoading(true);
+        const searchPage = isNewSearch ? 1 : page;
+
         setIsFilterOpen(false);
         try {
             const apiFilters = {
                 ...filters,
                 type: filters.type ? filters.type : undefined,
+                showNsfw,
             };
-            const data = await searchMedia(apiFilters);
-            setResults(data);
+            const data = await searchMedia(apiFilters, searchPage);
+            setResults(data.media);
+            setHasNextPage(data.hasNextPage);
+            setCurrentPage(searchPage);
         } catch (error) {
             console.error("Failed to search media:", error);
+            setResults([]);
         } finally {
             setIsLoading(false);
         }
-    }, [filters]);
+    }, [filters, showNsfw]);
 
     const handleSearchSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        performSearch();
+        performSearch(1, true);
     };
 
     return (
         <div className="pt-8">
-            <header className="px-4 md:px-6 mb-6">
+            <header className="px-4 md:px-6 lg:px-8 mb-6">
                 <h1 className="text-4xl font-black tracking-tighter text-white mb-4">Buscar</h1>
                 <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center">
                     <div className="relative flex-grow">
@@ -141,20 +155,42 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
                 </form>
             </header>
             
-            <FilterPanel isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} filters={filters} setFilters={setFilters} allGenres={allGenres} onApply={performSearch}/>
+            <FilterPanel isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} filters={filters} setFilters={setFilters} allGenres={allGenres} onApply={() => performSearch(1, true)}/>
 
-            <div className="px-4 md:px-6 pb-4">
-                {isLoading && <Spinner />}
+            <div className="px-4 md:px-6 lg:px-8 pb-4">
+                {isLoading && results.length === 0 ? <Spinner /> : null}
                 {!isLoading && results.length === 0 && (
                     <div className="text-center py-16">
                         <p className="text-gray-500">Comienza una búsqueda o aplica filtros para ver resultados.</p>
                     </div>
                 )}
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
                     {results.map(media => (
                         <MediaCard key={media.id} media={media} onClick={() => onMediaSelect(media)} />
                     ))}
                 </div>
+
+                {results.length > 0 && (
+                     <div className="flex justify-center items-center gap-4 mt-8">
+                        <button
+                            onClick={() => performSearch(currentPage - 1)}
+                            disabled={currentPage <= 1 || isLoading}
+                            className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                        >
+                            <ChevronLeftIcon className="w-5 h-5" />
+                            <span>Anterior</span>
+                        </button>
+                        <span className="font-semibold text-gray-400">Página {currentPage}</span>
+                        <button
+                            onClick={() => performSearch(currentPage + 1)}
+                            disabled={!hasNextPage || isLoading}
+                            className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                        >
+                            <span>Siguiente</span>
+                            <ChevronRightIcon className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -1,14 +1,17 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Media, MediaListStatus, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { getMangaChapterPagesFromProvider, MANGA_PROVIDERS, MangaPage, DebugLogEntry } from '../../services/contentService';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, Cog6ToothIcon } from '../icons';
+import { getMangaChapterPagesFromProvider, MANGA_PROVIDERS, MangaPage, DebugLogEntry, SearchResult } from '../../services/contentService';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, Cog6ToothIcon, BookOpenIcon } from '../icons';
 import Spinner from '../Spinner';
+import { getProviderMapping, saveProviderMapping } from '../../services/providerSelection';
 
 interface ProviderStatus {
-  status: 'loading' | 'success' | 'error';
+  status: 'loading' | 'success' | 'error' | 'selecting';
   data?: MangaPage[] | null;
   log: DebugLogEntry[];
+  searchResults?: SearchResult[];
+  selectedResult?: SearchResult;
 }
 
 interface MangaReaderViewProps {
@@ -19,68 +22,44 @@ interface MangaReaderViewProps {
   onChapterChange: (newChapter: number) => void;
 }
 
-const DebugStep: React.FC<{ entry: DebugLogEntry; index: number }> = ({ entry, index }) => {
-    const [isOpen, setIsOpen] = useState(index === 0);
-    const isError = !!entry.error;
+const SearchResultSelectorModal: React.FC<{
+    providerName: string;
+    results: SearchResult[];
+    currentSelection?: SearchResult;
+    onSelect: (result: SearchResult) => void;
+    onClose: () => void;
+}> = ({ providerName, results, currentSelection, onSelect, onClose }) => {
     return (
-        <div className="bg-gray-800 rounded-lg mb-2 overflow-hidden border border-gray-700">
-            <button onClick={() => setIsOpen(!isOpen)} className={`w-full flex justify-between items-center p-3 text-left ${isError ? 'bg-red-500/20' : 'bg-gray-700/50'}`}>
-                <span className="font-semibold text-sm text-gray-100">{entry.step}</span>
-                <ChevronRightIcon className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-            </button>
-            {isOpen && (
-                <div className="p-3 text-xs text-gray-300 space-y-3 border-t border-gray-700">
-                    {entry.url && (<div><strong className="text-gray-100 block mb-1">URL:</strong><p className="font-mono bg-gray-900 p-2 rounded break-all">{entry.url}</p></div>)}
-                    {entry.extracted && (<div><strong className="text-gray-100 block mb-1">Extraído:</strong><p className="bg-gray-900 p-2 rounded break-words">{entry.extracted}</p></div>)}
-                    {entry.response && (<div><div className="flex justify-between items-center mb-1"><strong className="text-gray-100">Respuesta:</strong><button onClick={() => navigator.clipboard.writeText(JSON.stringify(entry.response, null, 2))} className="text-gray-400 hover:text-white p-1"><CopyIcon className="w-4 h-4" /></button></div><pre className="bg-gray-900 p-2 rounded text-xs max-h-64 overflow-auto">{JSON.stringify(entry.response, null, 2)}</pre></div>)}
-                    {entry.error && (<div><strong className="text-red-400 block mb-1">Error:</strong><p className="bg-red-900/50 text-red-300 p-2 rounded break-words font-mono">{entry.error}</p></div>)}
-                </div>
-            )}
-        </div>
-    );
-};
-
-const ProcessInspectorModal: React.FC<{ providerStatus: Map<string, ProviderStatus>; initialProvider: string; onClose: () => void; }> = ({ providerStatus, initialProvider, onClose }) => {
-    const [activeProvider, setActiveProvider] = useState(initialProvider);
-    const providers = Array.from(providerStatus.keys());
-    const activeLog = providerStatus.get(activeProvider)?.log || [];
-    return (
-        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-            <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <header className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0"><h3 className="text-lg font-bold text-white">Inspector de Procesos</h3><button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><CloseIcon className="w-6 h-6"/></button></header>
-                <div className="flex-shrink-0 border-b border-gray-700 overflow-x-auto scrollbar-hide"><div className="flex p-2 gap-2">{providers.map(p => (<button key={p} onClick={() => setActiveProvider(p)} className={`flex-shrink-0 px-3 py-2 text-sm font-medium rounded-md flex items-center gap-2 ${activeProvider === p ? 'bg-indigo-600' : 'bg-gray-800 hover:bg-gray-700'}`}><span className={`w-2 h-2 rounded-full ${providerStatus.get(p)?.status === 'success' ? 'bg-green-500' : providerStatus.get(p)?.status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`}></span><span className="capitalize">{p}</span></button>))}</div></div>
-                <div className="p-4 overflow-y-auto flex-grow">{activeLog.length > 0 ? activeLog.map((e, i) => <DebugStep key={`${activeProvider}-${i}`} entry={e} index={i} />) : <div className="text-center py-10 text-gray-500"><p>No hay registros.</p></div>}</div>
-            </div>
-        </div>
-    );
-};
-
-const ProviderCard: React.FC<{ name: string; statusInfo: ProviderStatus; showInspect: boolean; onSelect: () => void; onInspect: () => void; }> = ({ name, statusInfo, showInspect, onSelect, onInspect }) => {
-    const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
-    let cardClasses = 'bg-gray-900 border-gray-700/80';
-    if (isSuccess) cardClasses = 'bg-green-500/10 border-green-500/50';
-    else if (statusInfo.status === 'error') cardClasses = 'bg-red-500/10 border-red-500/50';
-    const lastError = statusInfo.status === 'error' ? statusInfo.log.find(l => l.error)?.error : null;
-    return (
-        <div className={`w-full p-3 border rounded-lg transition-all ${cardClasses}`}>
-            <div className="flex justify-between items-center gap-2">
-                <div className="flex-grow"><span className="font-bold capitalize">{name}</span>{statusInfo.status === 'error' && lastError && (<p className="text-xs text-red-400/80 mt-1">{lastError}</p>)}</div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                    {statusInfo.status === 'loading' && <div className="w-5 h-5 border-2 border-gray-500 border-t-indigo-400 rounded-full animate-spin"></div>}
-                    {showInspect && <button onClick={onInspect} className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600"><Cog6ToothIcon className="w-4 h-4" /></button>}
-                    <button disabled={!isSuccess} onClick={onSelect} className="font-semibold text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-md disabled:bg-gray-700 disabled:text-gray-500 hover:enabled:bg-indigo-500">
-                        {isSuccess ? 'Leer' : (statusInfo.status === 'error' ? 'Error' : '...')}</button>
+        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <header className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                    <h3 className="text-lg font-bold text-white capitalize">Seleccionar resultado para {providerName}</h3>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><CloseIcon className="w-6 h-6"/></button>
+                </header>
+                <div className="p-4 overflow-y-auto flex-grow space-y-2">
+                    {results.length > 0 ? results.map((result) => {
+                        const isSelected = currentSelection?.url === result.url;
+                        return (
+                            <button key={result.url} onClick={() => onSelect(result)} className={`w-full flex items-center gap-4 p-3 rounded-lg text-left transition-colors border ${isSelected ? 'bg-indigo-500/20 border-indigo-500' : 'bg-gray-800/50 border-gray-700 hover:bg-gray-700/80'}`}>
+                                {result.img && <img src={result.img} alt={result.title || (result as any).name} className="w-14 h-20 object-cover rounded-md flex-shrink-0"/>}
+                                <div className="flex-grow min-w-0">
+                                    <p className={`font-semibold truncate ${isSelected ? 'text-indigo-300' : 'text-white'}`}>{result.title || (result as any).name}</p>
+                                </div>
+                            </button>
+                        )
+                    }) : <p className="text-gray-400 text-center py-8">No se encontraron resultados alternativos.</p>}
                 </div>
             </div>
         </div>
-    );
+    )
 };
+
 
 const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber, onClose, onProgressUpdate, onChapterChange }) => {
   const { user, upsertMediaEntry, isDebugMode } = useAuth();
   const [providerStatus, setProviderStatus] = useState<Map<string, ProviderStatus>>(new Map());
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
-  const [inspectorProvider, setInspectorProvider] = useState<string | null>(null);
+  const [selectorOpenFor, setSelectorOpenFor] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showControls, setShowControls] = useState(true);
@@ -128,22 +107,37 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
     onChapterChange(chapterNumber + 1);
   };
   
+  const fetchChapterPages = useCallback(async (provider: string, selectedResult?: SearchResult) => {
+    setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
+
+    const result = await getMangaChapterPagesFromProvider(provider, media, chapterNumber, selectedResult);
+    
+    setProviderStatus(prev => new Map(prev).set(provider, { 
+        status: result.data && result.data.length > 0 ? 'success' : 'error', 
+        data: result.data, 
+        log: result.log,
+        searchResults: result.searchResults,
+        selectedResult: result.selectedResult
+    }));
+  }, [media, chapterNumber]);
+
+  const handleResultSelection = (provider: string, result: SearchResult) => {
+      saveProviderMapping(media.id, provider, result);
+      setSelectorOpenFor(null);
+      fetchChapterPages(provider, result);
+  };
+
   useEffect(() => {
     setProviderStatus(new Map());
     setActiveProvider(null);
     setCurrentPage(1);
     if(scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
     
-    let title = media.title.romaji || media.title.english || '';
-    title = title.toLowerCase().replace(/\s+/g, '-');
     MANGA_PROVIDERS.forEach(provider => {
-        setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
-        getMangaChapterPagesFromProvider(provider, title, chapterNumber)
-            .then(result => setProviderStatus(prev => new Map(prev).set(provider, { 
-                status: result.data && result.data.length > 0 ? 'success' : 'error', data: result.data, log: result.log 
-            })));
+        const savedMapping = getProviderMapping(media.id, provider);
+        fetchChapterPages(provider, savedMapping);
     });
-  }, [media.title.english, media.title.romaji, chapterNumber]);
+  }, [media, chapterNumber, fetchChapterPages]);
   
   useEffect(() => {
       if (!pages.length || !scrollContainerRef.current) return;
@@ -168,7 +162,15 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
 
   return (
     <div className="fixed inset-0 bg-black z-[100] flex flex-col text-white animate-fade-in">
-        {inspectorProvider && (<ProcessInspectorModal providerStatus={providerStatus} initialProvider={inspectorProvider} onClose={() => setInspectorProvider(null)}/>)}
+        {selectorOpenFor && (
+             <SearchResultSelectorModal
+                providerName={selectorOpenFor}
+                results={providerStatus.get(selectorOpenFor)?.searchResults || []}
+                currentSelection={providerStatus.get(selectorOpenFor)?.selectedResult}
+                onSelect={(result) => handleResultSelection(selectorOpenFor, result)}
+                onClose={() => setSelectorOpenFor(null)}
+            />
+        )}
         
         <header className={`p-3 bg-gray-950/80 backdrop-blur-md flex items-center z-10 flex-shrink-0 border-b border-gray-800/80 absolute top-0 left-0 right-0 transition-transform duration-300 ${showControls ? 'translate-y-0' : '-translate-y-full'}`}>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60"><ArrowLeftIcon className="w-6 h-6" /></button>
@@ -179,11 +181,39 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
              {activeProvider ? (<button onClick={() => setActiveProvider(null)} className="text-sm bg-gray-800 px-3 py-2 rounded-lg capitalize hover:bg-gray-700">Cambiar</button>) : <div className="w-24 h-10"/>}
         </header>
 
-        <main ref={scrollContainerRef} className="flex-grow w-full overflow-y-auto bg-black" onClick={() => setShowControls(c => !c)}>
+        <main ref={scrollContainerRef} className="flex-grow w-full overflow-y-auto bg-black" onClick={() => activeProvider && setShowControls(c => !c)}>
             {!activeProvider ? (
-                <div className="w-full max-w-md mx-auto p-4 space-y-3 mt-20">
-                    <h3 className="text-lg font-bold text-center mb-4">Selecciona un proveedor</h3>
-                    {MANGA_PROVIDERS.map(p => (<ProviderCard key={p} name={p} statusInfo={providerStatus.get(p) || { status: 'loading', log:[] }} showInspect={isDebugMode} onSelect={() => setActiveProvider(p)} onInspect={() => setInspectorProvider(p)} />))}
+                <div className="flex items-center justify-center min-h-full p-4">
+                    <div className="relative bg-gray-900/80 backdrop-blur-lg rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-fade-in">
+                        <h3 className="text-xl font-bold text-center mb-2 text-white">Selecciona un proveedor</h3>
+                        {MANGA_PROVIDERS.map(provider => {
+                            const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
+                            const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
+                            
+                            return (
+                                <div key={provider} className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setActiveProvider(provider)}
+                                        disabled={!isSuccess}
+                                        className="w-full flex items-center justify-between p-4 rounded-lg transition-colors font-semibold text-lg
+                                                  bg-gray-800/70 border border-gray-700/80
+                                                  disabled:opacity-60 disabled:cursor-not-allowed
+                                                  hover:enabled:bg-indigo-600/40 hover:enabled:border-indigo-500/80"
+                                    >
+                                        <span className="capitalize">{provider}</span>
+                                        {statusInfo.status === 'loading' && <div className="w-5 h-5 border-2 border-gray-500 border-t-white rounded-full animate-spin"></div>}
+                                        {statusInfo.status === 'error' && <span className="text-sm font-medium text-red-400">Error</span>}
+                                        {isSuccess && <BookOpenIcon className="w-6 h-6 text-indigo-400" />}
+                                    </button>
+                                     {isSuccess && (
+                                        <button onClick={() => setSelectorOpenFor(provider)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-700/80 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-colors">
+                                            <Cog6ToothIcon className="w-6 h-6"/>
+                                        </button>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
                 </div>
             ) : (
                 <div className="flex flex-col items-center pt-24 pb-28">
@@ -196,7 +226,7 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
             )}
         </main>
         
-        <footer className={`p-2 bg-gray-950/80 backdrop-blur-md z-10 flex-shrink-0 border-t border-gray-800/80 absolute bottom-0 left-0 right-0 transition-transform duration-300 ${showControls ? 'translate-y-0' : 'translate-y-full'}`}>
+        <footer className={`p-2 bg-gray-950/80 backdrop-blur-md z-10 flex-shrink-0 border-t border-gray-800/80 absolute bottom-0 left-0 right-0 transition-transform duration-300 ${showControls && activeProvider ? 'translate-y-0' : 'translate-y-full'}`}>
              <div className="flex items-center justify-between w-full max-w-lg mx-auto">
                 <button onClick={() => onChapterChange(chapterNumber - 1)} disabled={chapterNumber <= 1} className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
                     <ChevronLeftIcon className="w-5 h-5" /><span>Anterior</span>

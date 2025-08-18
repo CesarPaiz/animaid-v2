@@ -22,6 +22,11 @@ const MediaCard: React.FC<MediaCardProps> = ({ media, onClick }) => {
         onLoad={() => setIsImageLoaded(true)}
         loading="lazy"
       />
+       {media.isAdult && (
+        <div className="absolute top-2 right-2 z-10 rounded-md bg-red-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-lg backdrop-blur-sm">
+          +18
+        </div>
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-all duration-300 group-hover:from-black/80" />
       <div className="absolute bottom-0 left-0 right-0 p-3">
         <h3 className="text-sm font-semibold text-white drop-shadow-lg truncate">

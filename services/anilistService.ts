@@ -3,6 +3,12 @@ import { Media, MediaFormat, MediaStatus, MediaSort, Genre } from '../types';
 // The official AniList GraphQL endpoint.
 const API_URL = 'https://graphql.anilist.co';
 
+// --- Caching Layer ---
+// In-memory cache to store API responses and reduce redundant requests to AniList.
+const apiCache = new Map<string, { timestamp: number; data: any }>();
+const CACHE_DURATION_MS = 25 * 60 * 1000; // Cache responses for 25 minutes.
+
+
 // A reusable GraphQL fragment to get all the media fields we need.
 // This ensures consistency and avoids repetition.
 const mediaFragment = `
@@ -18,6 +24,7 @@ const mediaFragment = `
       large
       color
     }
+    bannerImage
     format
     status
     episodes
@@ -25,6 +32,7 @@ const mediaFragment = `
     averageScore
     description(asHtml: false)
     genres
+    isAdult
     nextAiringEpisode {
       airingAt
       timeUntilAiring
@@ -33,8 +41,17 @@ const mediaFragment = `
   }
 `;
 
-// API Helper for GraphQL requests.
+// API Helper for GraphQL requests with caching.
 async function fetchFromGraphQL(query: string, variables: Record<string, any> = {}) {
+  const cacheKey = JSON.stringify({ query, variables });
+  const cachedItem = apiCache.get(cacheKey);
+
+  // If a valid, non-expired item is in the cache, return it.
+  if (cachedItem && (Date.now() - cachedItem.timestamp < CACHE_DURATION_MS)) {
+    return cachedItem.data;
+  }
+  
+  // Otherwise, fetch from the network.
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -59,6 +76,9 @@ async function fetchFromGraphQL(query: string, variables: Record<string, any> = 
     throw new Error(`GraphQL Query Error: ${JSON.stringify(json.errors)}`);
   }
   
+  // Store the new data in the cache with the current timestamp.
+  apiCache.set(cacheKey, { timestamp: Date.now(), data: json.data });
+
   return json.data;
 }
 
@@ -70,6 +90,7 @@ const transformGraphqlMedia = (apiMedia: any): Media => {
         id: apiMedia.id,
         title: apiMedia.title,
         coverImage: apiMedia.coverImage,
+        bannerImage: apiMedia.bannerImage,
         format: apiMedia.format,
         status: apiMedia.status,
         episodes: apiMedia.episodes,
@@ -77,17 +98,29 @@ const transformGraphqlMedia = (apiMedia: any): Media => {
         averageScore: apiMedia.averageScore,
         description: apiMedia.description || '',
         genres: apiMedia.genres || [],
+        isAdult: apiMedia.isAdult,
         nextAiringEpisode: apiMedia.nextAiringEpisode,
     };
 };
 
-// Helper to process a page of media from a GraphQL response.
-const getMediaListFromPage = (data: any): Media[] => {
-    if (data && data.Page && data.Page.media && Array.isArray(data.Page.media)) {
-        return data.Page.media.map(transformGraphqlMedia).filter(m => m.id);
-    }
-    return [];
+interface ProcessedPage {
+    media: Media[];
+    hasNextPage: boolean;
 }
+
+// Helper to process a page of media from a GraphQL response.
+const processMediaPage = (data: any): ProcessedPage => {
+    const pageData = data?.Page;
+    if (!pageData) return { media: [], hasNextPage: false };
+
+    const mediaList = Array.isArray(pageData.media) 
+        ? pageData.media.map(transformGraphqlMedia).filter((m: Media) => m.id)
+        : [];
+    
+    const hasNextPage = pageData.pageInfo?.hasNextPage || false;
+
+    return { media: mediaList, hasNextPage };
+};
 
 
 // --- Rewritten API Functions ---
@@ -104,7 +137,7 @@ export const getTrendingAnime = async (): Promise<Media[]> => {
     ${mediaFragment}
   `;
   const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
-  return getMediaListFromPage(data);
+  return processMediaPage(data).media;
 };
 
 export const getPopularAnime = async (): Promise<Media[]> => {
@@ -119,7 +152,7 @@ export const getPopularAnime = async (): Promise<Media[]> => {
     ${mediaFragment}
   `;
   const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
-  return getMediaListFromPage(data);
+  return processMediaPage(data).media;
 };
 
 export const getPopularManga = async (): Promise<Media[]> => {
@@ -134,7 +167,7 @@ export const getPopularManga = async (): Promise<Media[]> => {
       ${mediaFragment}
     `;
     const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
-    return getMediaListFromPage(data);
+    return processMediaPage(data).media;
   };
 
 
@@ -145,15 +178,19 @@ interface SearchFilters {
     stati?: MediaStatus[];
     genres?: string[];
     sort?: MediaSort;
+    showNsfw?: boolean;
 }
 
-export const searchMedia = async (filters: SearchFilters): Promise<Media[]> => {
-  if (!filters.query && !filters.genres?.length) return [];
+export const searchMedia = async (filters: SearchFilters, page: number = 1): Promise<ProcessedPage> => {
+  if (!filters.query && !filters.genres?.length) return { media: [], hasNextPage: false };
 
   const query = `
-    query ($page: Int, $perPage: Int, $search: String, $type: MediaType, $sort: [MediaSort], $genre_in: [String], $format_in: [MediaFormat], $status_in: [MediaStatus]) {
+    query ($page: Int, $perPage: Int, $search: String, $type: MediaType, $sort: [MediaSort], $genre_in: [String], $format_in: [MediaFormat], $status_in: [MediaStatus], $isAdult: Boolean) {
       Page(page: $page, perPage: $perPage) {
-        media(search: $search, type: $type, sort: $sort, genre_in: $genre_in, format_in: $format_in, status_in: $status_in) {
+        pageInfo {
+          hasNextPage
+        }
+        media(search: $search, type: $type, sort: $sort, genre_in: $genre_in, format_in: $format_in, status_in: $status_in, isAdult: $isAdult) {
           ...media
         }
       }
@@ -162,7 +199,7 @@ export const searchMedia = async (filters: SearchFilters): Promise<Media[]> => {
   `;
 
   const variables: any = {
-      page: 1,
+      page: page,
       perPage: 30,
       sort: filters.sort ? [filters.sort] : [MediaSort.POPULARITY_DESC],
   };
@@ -172,9 +209,12 @@ export const searchMedia = async (filters: SearchFilters): Promise<Media[]> => {
   if (filters.genres?.length) variables.genre_in = filters.genres;
   if (filters.formats?.length) variables.format_in = filters.formats;
   if (filters.stati?.length) variables.status_in = filters.stati;
+  if (filters.showNsfw === false) {
+    variables.isAdult = false;
+  }
 
   const data = await fetchFromGraphQL(query, variables);
-  return getMediaListFromPage(data);
+  return processMediaPage(data);
 };
 
 export const getMediaDetails = async (mediaId: number): Promise<Media> => {
@@ -216,7 +256,7 @@ export const getMultipleMediaDetails = async (ids: number[]): Promise<Media[]> =
             id_in: chunk,
             page: 1,
             perPage: CHUNK_SIZE
-        }).then(getMediaListFromPage)
+        }).then(data => processMediaPage(data).media)
     );
 
     const chunkedResults = await Promise.all(promises);

@@ -61,6 +61,7 @@ export interface Media {
   id: number;
   title: MediaTitle;
   coverImage: MediaCoverImage;
+  bannerImage?: string;
   format: MediaFormat;
   status: MediaStatus;
   episodes?: number;
@@ -68,11 +69,12 @@ export interface Media {
   averageScore?: number;
   description: string;
   genres: string[];
+  isAdult?: boolean;
   nextAiringEpisode?: NextAiringEpisode;
   userProgress?: {
     progress: number;
     score: number;
-    status?: MediaListStatus;
+    status: MediaListStatus;
   };
 }
 
@@ -87,7 +89,7 @@ export interface MediaList {
   media: Media;
   progress: number;
   score: number;
-  status?: MediaListStatus;
+  status: MediaListStatus;
   updatedAt?: number;
 }
 

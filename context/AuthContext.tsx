@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback, useMemo } from 'react';
-import { createClient, SupabaseClient, Session, AuthUser, AuthError } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type Session, type User as AuthUser, type AuthError } from '@supabase/supabase-js';
 import { User, Media, MediaList, MediaListStatus } from '../types';
 import { getMultipleMediaDetails } from '../services/anilistService';
 
@@ -13,7 +13,7 @@ export type Database = {
           media_id: number;
           progress: number;
           score: number | null;
-          status: 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'DROPPED' | 'PAUSED' | 'REPEATING';
+          status: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
           media_type: "ANIME" | "MANGA";
           updated_at: string;
         };
@@ -23,7 +23,7 @@ export type Database = {
           media_id: number;
           progress: number;
           score?: number | null;
-          status: 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'DROPPED' | 'PAUSED' | 'REPEATING';
+          status: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
           media_type: "ANIME" | "MANGA";
           updated_at?: string;
         };
@@ -33,10 +33,11 @@ export type Database = {
           media_id?: number;
           progress?: number;
           score?: number | null;
-          status?: 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'DROPPED' | 'PAUSED' | 'REPEATING';
+          status?: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
           media_type?: "ANIME" | "MANGA";
           updated_at?: string;
         };
+        Relationships: [];
       };
       profiles: {
         Row: {
@@ -57,6 +58,7 @@ export type Database = {
           avatar_url?: string | null;
           updated_at?: string | null;
         };
+        Relationships: [];
       };
     };
     Views: {
@@ -66,7 +68,7 @@ export type Database = {
       [_ in never]: never;
     };
     Enums: {
-      media_list_status: 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'DROPPED' | 'PAUSED' | 'REPEATING';
+      [_ in never]: never;
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -140,6 +142,8 @@ interface AuthContextType {
   getHistoryList: () => Promise<MediaList[]>;
   isDebugMode: boolean;
   toggleDebugMode: () => void;
+  showNsfw: boolean;
+  toggleShowNsfw: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -161,6 +165,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
   });
+  const [showNsfw, setShowNsfw] = useState<boolean>(() => {
+    try {
+      const item = window.localStorage.getItem('showNsfw');
+      return item ? JSON.parse(item) === true : false;
+    } catch (error) {
+      console.error("Error al leer 'showNsfw' desde localStorage:", error);
+      return false;
+    }
+  });
 
   const toggleDebugMode = useCallback(() => {
     setIsDebugMode(prev => {
@@ -174,8 +187,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, []);
 
+  const toggleShowNsfw = useCallback(() => {
+    setShowNsfw(prev => {
+      const newState = !prev;
+      try {
+        window.localStorage.setItem('showNsfw', JSON.stringify(newState));
+      } catch (error) {
+        console.error("No se pudo guardar 'showNsfw' en localStorage:", error);
+      }
+      return newState;
+    });
+  }, []);
+
   const clearAuthStatus = useCallback(() => {
-    setAuthStatus(prev => ({ ...prev, message: null, isError: false }));
+    setAuthStatus(prev => {
+        if (prev.message === null && !prev.isError) return prev;
+        return { ...prev, message: null, isError: false };
+    });
   }, []);
 
   const handleUser = useCallback(async (authUser: AuthUser | null) => {
@@ -188,14 +216,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (error) console.error("Error al obtener el perfil de usuario:", error);
       
-      setUser({
+      const newUser = {
         id: authUser.id,
         email: authUser.email,
         username: profile?.username || 'Invitado',
         avatar_url: profile?.avatar_url || undefined
+      };
+      
+      // Previene re-renders si el objeto de usuario es idéntico, rompiendo bucles.
+      setUser(currentUser => {
+          if (JSON.stringify(currentUser) === JSON.stringify(newUser)) {
+              return currentUser;
+          }
+          return newUser;
       });
     } else {
-      setUser(null);
+      setUser(currentUser => (currentUser !== null ? null : currentUser));
     }
   }, []);
 
@@ -204,7 +240,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
         await handleUser(session?.user ?? null);
-        setAuthStatus(prev => ({ ...prev, isLoading: false }));
+        setAuthStatus(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
     };
     fetchSession();
 
@@ -212,7 +248,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       async (_event, session) => {
         setSession(session);
         await handleUser(session?.user ?? null);
-        setAuthStatus(prev => ({ ...prev, isLoading: false }));
+        setAuthStatus(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
       }
     );
 
@@ -236,8 +272,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signOut = useCallback(async () => {
     setAuthStatus({ isLoading: true, message: 'Cerrando sesión...', isError: false });
     await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
+    // El listener onAuthStateChange se encargará de limpiar el estado del usuario y la sesión.
     setAuthStatus({ isLoading: false, message: null, isError: false });
   }, []);
   
@@ -260,12 +295,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!user) return null;
       const entryToUpsert: MediaEntryInsert = {
           ...entry,
+          score: entry.score ?? null,
           user_id: user.id
       };
       
       const { data, error } = await supabase
           .from('media_entries')
-          .upsert(entryToUpsert, { onConflict: 'user_id,media_id' })
+          .upsert([entryToUpsert], { onConflict: 'user_id,media_id' })
           .select()
           .single();
 
@@ -273,7 +309,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error('Error al actualizar/insertar la entrada de media:', error);
         return null;
       }
-      return data;
+      return data || null;
   }, [user]);
 
   const getLibraryList = useCallback(async (): Promise<MediaList[]> => {
@@ -328,9 +364,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       getFullLibraryList, 
       getHistoryList,
       isDebugMode,
-      toggleDebugMode
+      toggleDebugMode,
+      showNsfw,
+      toggleShowNsfw
     }), [
-      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, isDebugMode, toggleDebugMode
+      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw
   ]);
 
   return (

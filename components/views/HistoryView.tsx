@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Media, MediaList } from '../../types';
 import Spinner from '../Spinner';
 import { useAuth } from '../../context/AuthContext';
-import { HistoryIcon, UserCircleIcon } from '../icons';
+import { HistoryIcon } from '../icons';
 
 const timeAgo = (timestamp: number): string => {
     const now = new Date();
@@ -47,48 +47,34 @@ const HistoryListItem: React.FC<HistoryListItemProps> = ({ item, onClick }) => (
 const HistoryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMediaSelect }) => {
     const [userHistory, setUserHistory] = useState<MediaList[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const { user, getHistoryList, authStatus } = useAuth();
+    const { getHistoryList } = useAuth();
 
     useEffect(() => {
-        if (user) {
-            setIsLoading(true);
-            getHistoryList()
-                .then(data => {
-                    setUserHistory(data);
-                })
-                .catch(error => {
-                    console.error("Failed to fetch user history:", error);
-                })
-                .finally(() => {
-                    setIsLoading(false);
-                });
-        } else if (!authStatus.isLoading) {
-            setIsLoading(false);
-            setUserHistory([]);
-        }
-    }, [user, authStatus.isLoading, getHistoryList]);
+        setIsLoading(true);
+        getHistoryList()
+            .then(data => {
+                setUserHistory(data);
+            })
+            .catch(error => {
+                console.error("Failed to fetch user history:", error);
+            })
+            .finally(() => {
+                setIsLoading(false);
+            });
+    }, [getHistoryList]);
     
-    const renderEmptyState = (isLoggedIn: boolean) => (
+    const renderEmptyState = () => (
         <div className="text-center py-16 px-4">
-            {isLoggedIn ? (
-                <>
-                    <HistoryIcon className="w-16 h-16 mx-auto text-gray-700 mb-4" />
-                    <h3 className="text-xl font-semibold text-white">Sin Actividad Reciente</h3>
-                    <p className="text-gray-500 mt-2">Tu historial de visualización aparecerá aquí.</p>
-                </>
-            ) : (
-                <>
-                    <UserCircleIcon className="w-20 h-20 mx-auto text-gray-700" />
-                    <p className="text-gray-400 mt-4 text-lg">Inicia sesión para ver tu historial.</p>
-                </>
-            )}
+            <HistoryIcon className="w-16 h-16 mx-auto text-gray-700 mb-4" />
+            <h3 className="text-xl font-semibold text-white">Sin Actividad Reciente</h3>
+            <p className="text-gray-500 mt-2">Tu historial de visualización aparecerá aquí.</p>
         </div>
     );
 
-    if (authStatus.isLoading || (isLoading && user)) {
+    if (isLoading) {
         return (
-             <div className="pt-8">
-                <header className="px-4 md:px-6 mb-6">
+             <div className="pt-8 md:px-6 lg:px-8">
+                <header className="px-4 md:px-0 mb-6">
                     <h1 className="text-4xl font-black tracking-tighter text-white">Historial</h1>
                 </header>
                 <Spinner />
@@ -97,17 +83,16 @@ const HistoryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
     }
 
     return (
-        <div className="pt-8">
-            <header className="px-4 md:px-6 mb-6">
+        <div className="pt-8 md:px-6 lg:px-8">
+            <header className="px-4 md:px-0 mb-6">
                 <h1 className="text-4xl font-black tracking-tighter text-white">Historial</h1>
                 <p className="text-gray-400 mt-1">Tu actividad más reciente.</p>
             </header>
-            <div className="px-4 md:px-6">
-                {!user ? renderEmptyState(false) :
-                userHistory.length > 0 ? (
+            <div className="px-4 md:px-0">
+                {userHistory.length > 0 ? (
                     userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
                 ) : (
-                    renderEmptyState(true)
+                    renderEmptyState()
                 )}
             </div>
         </div>

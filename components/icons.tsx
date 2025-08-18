@@ -16,6 +16,11 @@ import {
   DocumentDuplicateIcon,
   UserCircleIcon,
   ChevronUpIcon,
+  EllipsisVerticalIcon,
+  ArrowsRightLeftIcon,
+  PlusIcon,
+  BookmarkIcon,
+  ChevronUpDownIcon,
 } from '@heroicons/react/24/outline';
 
 // Importa los íconos rellenos (solid)
@@ -49,7 +54,7 @@ export const HistoryIcon = ClockIcon;
 export const CopyIcon = DocumentDuplicateIcon;
 
 // Chevrons y flechas ya tienen el nombre correcto
-export { ChevronLeftIcon, ChevronRightIcon, ArrowLeftIcon, BookOpenIcon, UserCircleIcon, ChevronUpIcon, ClockIcon, Cog6ToothIcon };
+export { ChevronLeftIcon, ChevronRightIcon, ArrowLeftIcon, BookOpenIcon, UserCircleIcon, ChevronUpIcon, ClockIcon, Cog6ToothIcon, EllipsisVerticalIcon, ArrowsRightLeftIcon, PlusIcon, BookmarkIcon, ChevronUpDownIcon };
 
 // Íconos sólidos
 export const StarIcon = StarIconSolid;

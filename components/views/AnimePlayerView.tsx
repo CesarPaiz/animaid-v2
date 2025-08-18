@@ -1,14 +1,18 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Media, MediaListStatus, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { getAnimeEpisodeSourcesFromProvider, ANIME_PROVIDERS, VideoSource, DebugLogEntry } from '../../services/contentService';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, CheckIconSolid, ChevronUpIcon, Cog6ToothIcon } from '../icons';
+import { getAnimeEpisodeSourcesFromProvider, ANIME_PROVIDERS, VideoSource, DebugLogEntry, SearchResult } from '../../services/contentService';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CheckIconSolid, ChevronUpIcon, Cog6ToothIcon, PlayIcon } from '../icons';
 import Spinner from '../Spinner';
+import { getProviderMapping, saveProviderMapping } from '../../services/providerSelection';
+
 
 interface ProviderStatus {
-  status: 'loading' | 'success' | 'error';
+  status: 'loading' | 'success' | 'error' | 'selecting';
   data?: VideoSource[] | null;
   log: DebugLogEntry[];
+  searchResults?: SearchResult[];
+  selectedResult?: SearchResult;
 }
 
 interface AnimePlayerViewProps {
@@ -37,150 +41,78 @@ const VideoPlayer: React.FC<{ source: VideoSource; title: string; }> = ({ source
     );
 };
 
-const DebugStep: React.FC<{ entry: DebugLogEntry; index: number }> = ({ entry, index }) => {
-    const [isOpen, setIsOpen] = useState(index === 0);
-    const isError = !!entry.error;
-
+const SearchResultSelectorModal: React.FC<{
+    providerName: string;
+    results: SearchResult[];
+    currentSelection?: SearchResult;
+    onSelect: (result: SearchResult) => void;
+    onClose: () => void;
+}> = ({ providerName, results, currentSelection, onSelect, onClose }) => {
     return (
-        <div className="bg-gray-800 rounded-lg mb-2 overflow-hidden border border-gray-700">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className={`w-full flex justify-between items-center p-3 text-left ${isError ? 'bg-red-500/20' : 'bg-gray-700/50'}`}
-            >
-                <span className="font-semibold text-sm text-gray-100">{entry.step}</span>
-                <ChevronRightIcon className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-            </button>
-            {isOpen && (
-                <div className="p-3 text-xs text-gray-300 space-y-3 border-t border-gray-700">
-                    {entry.url && (
-                        <div>
-                            <strong className="text-gray-100 block mb-1">URL Solicitada:</strong>
-                            <p className="font-mono bg-gray-900 p-2 rounded break-all">{entry.url}</p>
-                        </div>
-                    )}
-                    {entry.extracted && (
-                         <div>
-                            <strong className="text-gray-100 block mb-1">Información Extraída:</strong>
-                            <p className="bg-gray-900 p-2 rounded break-words">{entry.extracted}</p>
-                        </div>
-                    )}
-                    {entry.response && (
-                        <div>
-                            <div className="flex justify-between items-center mb-1">
-                                <strong className="text-gray-100">Respuesta Completa:</strong>
-                                <button onClick={() => navigator.clipboard.writeText(JSON.stringify(entry.response, null, 2))} className="text-gray-400 hover:text-white p-1 rounded-full"><CopyIcon className="w-4 h-4" /></button>
-                            </div>
-                            <pre className="bg-gray-900 p-2 rounded text-xs max-h-64 overflow-auto font-mono whitespace-pre-wrap">
-                                {JSON.stringify(entry.response, null, 2)}
-                            </pre>
-                        </div>
-                    )}
-                     {entry.error && (
-                         <div>
-                            <strong className="text-red-400 block mb-1">Error:</strong>
-                            <p className="bg-red-900/50 text-red-300 p-2 rounded break-words font-mono">{entry.error}</p>
-                        </div>
-                    )}
+        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <header className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                    <h3 className="text-lg font-bold text-white capitalize">Seleccionar resultado para {providerName}</h3>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><CloseIcon className="w-6 h-6"/></button>
+                </header>
+                <div className="p-4 overflow-y-auto flex-grow space-y-2">
+                    {results.length > 0 ? results.map((result) => {
+                        const isSelected = currentSelection?.url === result.url;
+                        return (
+                            <button key={result.url} onClick={() => onSelect(result)} className={`w-full flex items-center gap-4 p-3 rounded-lg text-left transition-colors border ${isSelected ? 'bg-indigo-500/20 border-indigo-500' : 'bg-gray-800/50 border-gray-700 hover:bg-gray-700/80'}`}>
+                                {result.img && <img src={result.img} alt={result.title || (result as any).name} className="w-14 h-20 object-cover rounded-md flex-shrink-0"/>}
+                                <div className="flex-grow min-w-0">
+                                    <p className={`font-semibold truncate ${isSelected ? 'text-indigo-300' : 'text-white'}`}>{result.title || (result as any).name}</p>
+                                </div>
+                            </button>
+                        )
+                    }) : <p className="text-gray-400 text-center py-8">No se encontraron resultados alternativos.</p>}
                 </div>
-            )}
+            </div>
         </div>
-    );
+    )
 };
 
-const ProcessInspectorModal: React.FC<{
+
+const SimpleProviderSelector: React.FC<{
   providerStatus: Map<string, ProviderStatus>;
-  initialProvider: string;
-  onClose: () => void;
-}> = ({ providerStatus, initialProvider, onClose }) => {
-  const [activeProvider, setActiveProvider] = useState(initialProvider);
-  const providers = Array.from(providerStatus.keys());
-  const activeLog = providerStatus.get(activeProvider)?.log || [];
-
-  return (
-    <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <header className="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-            <h3 className="text-lg font-bold text-white">Inspector de Procesos</h3>
-           <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700">
-              <CloseIcon className="w-6 h-6"/>
-           </button>
-        </header>
-        <div className="flex-shrink-0 border-b border-gray-700 overflow-x-auto scrollbar-hide">
-          <div className="flex p-2 gap-2">
-            {providers.map(provider => {
-               const status = providerStatus.get(provider)?.status;
-               let indicatorColor = 'bg-gray-500';
-               if (status === 'success') indicatorColor = 'bg-green-500';
-               if (status === 'error') indicatorColor = 'bg-red-500';
-              return (
-                <button
-                  key={provider}
-                  onClick={() => setActiveProvider(provider)}
-                  className={`flex-shrink-0 px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${activeProvider === provider ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${indicatorColor}`}></span>
-                  <span className="capitalize">{provider}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <div className="p-4 overflow-y-auto flex-grow">
-          {activeLog.length > 0 ? (
-              activeLog.map((entry, index) => <DebugStep key={`${activeProvider}-${index}`} entry={entry} index={index} />)
-          ) : (
-            <div className="text-center py-10 text-gray-500">
-                <p>No hay registros para este proveedor.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ProviderCard: React.FC<{ 
-    name: string; 
-    statusInfo: ProviderStatus;
-    showInspect: boolean;
-    onSelect: () => void;
-    onInspect: () => void;
-}> = ({ name, statusInfo, showInspect, onSelect, onInspect }) => {
-    const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
-    
-    let cardClasses = 'bg-gray-900 border-gray-700/80';
-    if (isSuccess) cardClasses = 'bg-green-500/10 border-green-500/50';
-    else if (statusInfo.status === 'error') cardClasses = 'bg-red-500/10 border-red-500/50';
-
-    const lastError = statusInfo.status === 'error' ? statusInfo.log.find(l => l.error)?.error : null;
-
+  onSelect: (provider: string) => void;
+  onShowSelector: (provider: string) => void;
+}> = ({ providerStatus, onSelect, onShowSelector }) => {
     return (
-        <div className={`w-full p-3 border rounded-lg transition-all ${cardClasses}`}>
-            <div className="flex justify-between items-center gap-2">
-                <div className="flex-grow">
-                    <span className="font-bold capitalize">{name}</span>
-                    {statusInfo.status === 'error' && lastError && (
-                        <p className="text-xs text-red-400/80 mt-1 break-words">{lastError}</p>
-                    )}
-                </div>
-
-                <div className="flex items-center gap-3 flex-shrink-0">
-                    {statusInfo.status === 'loading' && <div className="w-5 h-5 border-2 border-gray-500 border-t-indigo-400 rounded-full animate-spin"></div>}
-                    {showInspect && <button onClick={onInspect} className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 p-1.5 rounded-md">
-                        <Cog6ToothIcon className="w-4 h-4" />
-                    </button>}
-                    <button 
-                        disabled={!isSuccess} 
-                        onClick={onSelect}
-                        className="font-semibold text-sm bg-indigo-600 text-white px-4 py-1.5 rounded-md disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed hover:enabled:bg-indigo-500 transition-colors"
-                    >
-                        {isSuccess ? 'Ver' : (statusInfo.status === 'error' ? 'Error' : '...')}
-                    </button>
-                </div>
-            </div>
+        <div className="relative bg-gray-900/80 backdrop-blur-lg rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-fade-in">
+            <h3 className="text-xl font-bold text-center mb-2 text-white">Selecciona un proveedor</h3>
+            {ANIME_PROVIDERS.map(provider => {
+                const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
+                const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
+                
+                return (
+                    <div key={provider} className="flex items-center gap-2">
+                        <button
+                            onClick={() => onSelect(provider)}
+                            disabled={!isSuccess}
+                            className="w-full flex items-center justify-between p-4 rounded-lg transition-colors font-semibold text-lg
+                                      bg-gray-800/70 border border-gray-700/80
+                                      disabled:opacity-60 disabled:cursor-not-allowed
+                                      hover:enabled:bg-indigo-600/40 hover:enabled:border-indigo-500/80"
+                        >
+                            <span className="capitalize">{provider}</span>
+                            {statusInfo.status === 'loading' && <div className="w-5 h-5 border-2 border-gray-500 border-t-white rounded-full animate-spin"></div>}
+                            {statusInfo.status === 'error' && <span className="text-sm font-medium text-red-400">Error</span>}
+                            {isSuccess && <PlayIcon className="w-6 h-6 text-indigo-400" />}
+                        </button>
+                        {isSuccess && (
+                            <button onClick={() => onShowSelector(provider)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-700/80 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-colors">
+                                <Cog6ToothIcon className="w-6 h-6"/>
+                            </button>
+                        )}
+                    </div>
+                )
+            })}
         </div>
     );
 };
+
 
 const SourceSelectorModal: React.FC<{
     isOpen: boolean;
@@ -194,25 +126,39 @@ const SourceSelectorModal: React.FC<{
     return (
         <div className="fixed inset-0 bg-black/70 z-[120] flex flex-col justify-end backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div 
-                className="bg-gray-900/90 border-t border-gray-700 rounded-t-2xl shadow-2xl max-h-[50vh] flex flex-col animate-slide-up"
+                className="bg-gray-900/95 border-t border-gray-700/80 rounded-t-2xl shadow-2xl max-h-[60vh] flex flex-col animate-slide-up"
                 onClick={e => e.stopPropagation()}
             >
-                <div className="p-4 border-b border-gray-700 sticky top-0 bg-gray-900/90 flex items-center justify-between">
-                    <h4 className="font-bold text-center text-white flex-grow">Seleccionar Fuente</h4>
-                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-700"><CloseIcon className="w-5 h-5"/></button>
+                <div className="p-4 flex-shrink-0">
+                    <div className="w-10 h-1.5 bg-gray-700 rounded-full mx-auto mb-3"></div>
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-lg font-bold text-white">Seleccionar Fuente</h4>
+                        <button onClick={onClose} className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700/60 transition-colors">
+                            <CloseIcon className="w-5 h-5"/>
+                        </button>
+                    </div>
                 </div>
-                <ul className="p-2 space-y-1 overflow-y-auto">
-                    {sources.map((source, index) => (
-                        <li key={`${source.name}-${index}`}>
-                            <button 
-                                onClick={() => { onSelect(index); onClose(); }}
-                                className={`w-full text-left p-3 rounded-lg flex justify-between items-center transition-colors ${activeIndex === index ? 'bg-indigo-600/50 text-white' : 'hover:bg-gray-700/50 text-gray-300'}`}
-                            >
-                                <span>{source.name}</span>
-                                {activeIndex === index && <CheckIconSolid className="w-5 h-5 text-indigo-300"/>}
-                            </button>
-                        </li>
-                    ))}
+                <ul className="px-3 pb-3 space-y-2 overflow-y-auto">
+                    {sources.map((source, index) => {
+                        const isActive = activeIndex === index;
+                        return (
+                            <li key={`${source.name}-${index}`}>
+                                <button 
+                                    onClick={() => { onSelect(index); onClose(); }}
+                                    className={`w-full text-left p-4 rounded-xl flex items-center gap-4 transition-all duration-200 border-2 ${
+                                        isActive 
+                                        ? 'bg-indigo-500/20 border-indigo-500 text-white' 
+                                        : 'bg-gray-800/60 border-transparent hover:border-gray-600 text-gray-300'
+                                    }`}
+                                >
+                                    <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                                        {isActive ? <CheckIconSolid className="w-6 h-6 text-indigo-400"/> : <PlayIcon className="w-5 h-5 text-gray-500"/>}
+                                    </div>
+                                    <span className="font-semibold flex-grow">{source.name}</span>
+                                </button>
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
         </div>
@@ -220,17 +166,17 @@ const SourceSelectorModal: React.FC<{
 };
 
 const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber, onClose, onProgressUpdate, onEpisodeChange }) => {
-  const { user, upsertMediaEntry, isDebugMode } = useAuth();
+  const { user, upsertMediaEntry } = useAuth();
   
   const [providerStatus, setProviderStatus] = useState<Map<string, ProviderStatus>>(new Map());
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
 
-  const [inspectorProvider, setInspectorProvider] = useState<string | null>(null);
+  const [selectorOpenFor, setSelectorOpenFor] = useState<string | null>(null);
   const [isSourceSelectorOpen, setIsSourceSelectorOpen] = useState(false);
   const [isSyncing, setIsSyncing] =useState(false);
   
-  const watchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const watchTimerRef = useRef<number | null>(null);
 
   const markProgress = useCallback(async (episodeToMark: number) => {
     if (!user || episodeToMark <= (media.userProgress?.progress || 0)) {
@@ -278,7 +224,7 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
     if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
 
     if (activeProvider && user && episodeNumber > (media.userProgress?.progress || 0)) {
-      watchTimerRef.current = setTimeout(() => {
+      watchTimerRef.current = window.setTimeout(() => {
         markProgress(episodeNumber);
       }, 120000); // 2 minutes
     }
@@ -288,30 +234,36 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
     };
   }, [activeProvider, episodeNumber, media.userProgress?.progress, user, markProgress]);
 
+  const fetchSourcesForProvider = useCallback(async (provider: string, selectedResult?: SearchResult) => {
+    setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
+
+    const result = await getAnimeEpisodeSourcesFromProvider(provider, media, episodeNumber, selectedResult);
+    
+    setProviderStatus(prev => new Map(prev).set(provider, { 
+        status: result.data && result.data.length > 0 ? 'success' : 'error', 
+        data: result.data, 
+        log: result.log,
+        searchResults: result.searchResults,
+        selectedResult: result.selectedResult
+    }));
+  }, [media, episodeNumber]);
+
+  const handleResultSelection = (provider: string, result: SearchResult) => {
+      saveProviderMapping(media.id, provider, result);
+      setSelectorOpenFor(null);
+      fetchSourcesForProvider(provider, result);
+  };
+
   useEffect(() => {
     setProviderStatus(new Map());
     setActiveProvider(null);
     setActiveSourceIndex(0);
-
-    const baseTitle = media.title.romaji || media.title.english || '';
     
     ANIME_PROVIDERS.forEach(provider => {
-      let searchTitle = baseTitle.toLowerCase();
-      if (provider !== 'flv') {
-        searchTitle = searchTitle.replace(/\s+/g, '-');
-      }
-      
-      setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
-      getAnimeEpisodeSourcesFromProvider(provider, searchTitle, episodeNumber)
-        .then(result => {
-          setProviderStatus(prev => new Map(prev).set(provider, { 
-              status: result.data && result.data.length > 0 ? 'success' : 'error', 
-              data: result.data, 
-              log: result.log 
-          }));
-        });
+        const savedMapping = getProviderMapping(media.id, provider);
+        fetchSourcesForProvider(provider, savedMapping);
     });
-  }, [media.title.english, media.title.romaji, episodeNumber]);
+  }, [media, episodeNumber, fetchSourcesForProvider]);
 
   const handleProviderSelect = (provider: string) => {
     const status = providerStatus.get(provider);
@@ -332,9 +284,16 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
 
   return (
     <div className="fixed inset-0 bg-black z-[100] flex flex-col text-white animate-fade-in">
-      {inspectorProvider && (
-          <ProcessInspectorModal providerStatus={providerStatus} initialProvider={inspectorProvider} onClose={() => setInspectorProvider(null)} />
-      )}
+      {selectorOpenFor && (
+            <SearchResultSelectorModal
+                providerName={selectorOpenFor}
+                results={providerStatus.get(selectorOpenFor)?.searchResults || []}
+                currentSelection={providerStatus.get(selectorOpenFor)?.selectedResult}
+                onSelect={(result) => handleResultSelection(selectorOpenFor, result)}
+                onClose={() => setSelectorOpenFor(null)}
+            />
+        )}
+
       {activeProvider && activeProviderData && (
           <SourceSelectorModal isOpen={isSourceSelectorOpen} onClose={() => setIsSourceSelectorOpen(false)} sources={activeProviderData} activeIndex={activeSourceIndex} onSelect={setActiveSourceIndex}/>
       )}
@@ -350,22 +309,29 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
         <div className="w-10 h-10 flex-shrink-0" />
       </header>
 
-      <main className="flex-grow w-full flex items-center justify-center relative bg-black overflow-hidden">
+      <main className="flex-grow w-full flex items-center justify-center relative bg-black overflow-hidden p-2 md:p-4">
+        <img src={media.coverImage.extraLarge} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-xl scale-110"/>
+        <div className="absolute inset-0 bg-black/60"></div>
+        
         {!activeProvider ? (
-            <div className="w-full max-w-md mx-auto p-4 space-y-3 overflow-y-auto">
-                <h3 className="text-lg font-bold text-center mb-4">Selecciona un proveedor</h3>
-                {ANIME_PROVIDERS.map(provider => {
-                    const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
-                    return <ProviderCard key={provider} name={provider} statusInfo={statusInfo} showInspect={isDebugMode} onSelect={() => handleProviderSelect(provider)} onInspect={() => setInspectorProvider(provider)} />;
-                })}
+            <div className="flex items-center justify-center min-h-full p-4">
+                <SimpleProviderSelector 
+                    providerStatus={providerStatus} 
+                    onSelect={handleProviderSelect}
+                    onShowSelector={setSelectorOpenFor}
+                />
             </div>
-        ) : activeSource ? (
-          <VideoPlayer source={activeSource} title={`Player for ${media.title.romaji}`} />
         ) : (
-          <div className="text-center p-4">
-              <p className="text-gray-300">No se pudo cargar el video desde {activeProvider}.</p>
-              <button onClick={() => setActiveProvider(null)} className="mt-2 text-indigo-400 font-semibold">Probar otro proveedor</button>
-          </div>
+            <div className="w-full max-w-5xl aspect-video bg-black rounded-lg shadow-2xl shadow-indigo-900/40 overflow-hidden relative z-10">
+              {activeSource ? (
+                <VideoPlayer source={activeSource} title={`Player for ${media.title.romaji}`} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-center p-4">
+                    <p className="text-gray-300">No se pudo cargar el video desde {activeProvider}.</p>
+                    <button onClick={() => setActiveProvider(null)} className="mt-2 text-indigo-400 font-semibold">Probar otro proveedor</button>
+                </div>
+              )}
+            </div>
         )}
       </main>
 

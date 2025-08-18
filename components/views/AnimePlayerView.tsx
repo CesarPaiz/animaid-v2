@@ -33,10 +33,8 @@ const VideoPlayer: React.FC<{ source: VideoSource; title: string; }> = ({ source
             key={source.url}
             src={source.url}
             className="w-full h-full border-0 bg-black"
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowFullScreen
             title={title}
-            sandbox="allow-forms allow-presentation allow-same-origin allow-scripts allow-fullscreen"
+            allowfullscreen=""
         />
     );
 };
@@ -195,7 +193,7 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
 
     if (totalEpisodes > 0 && episodeToMark >= totalEpisodes && media.status === MediaStatus.FINISHED) {
         newStatus = MediaListStatus.COMPLETED;
-    } else if (totalEpisodes === 1 && episodeToMark === 1 && media.status === MediaStatus.FINISHED) { // Case for movies
+    } else if (totalEpisodes === 1 && episodeToMark === 1 && media.status === MediaStatus.FINISHED) {
         newStatus = MediaListStatus.COMPLETED;
     }
 
@@ -226,7 +224,7 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
     if (activeProvider && user && episodeNumber > (media.userProgress?.progress || 0)) {
       watchTimerRef.current = window.setTimeout(() => {
         markProgress(episodeNumber);
-      }, 120000); // 2 minutes
+      }, 120000);
     }
 
     return () => {

@@ -36,7 +36,7 @@ const VideoPlayer: React.FC<{ source: VideoSource; title: string; }> = ({ source
             allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
             allowFullScreen
             title={title}
-            sandbox="allow-forms allow-presentation allow-same-origin allow-scripts"
+            sandbox="allow-forms allow-presentation allow-same-origin allow-scripts allow-fullscreen"
         />
     );
 };

@@ -125,7 +125,7 @@ interface MediaEntryUpsert {
     progress: number;
     status: MediaListStatus;
     media_type: 'ANIME' | 'MANGA';
-    score?: number;
+    score?: number | null;
 }
 
 interface AuthContextType {
@@ -210,7 +210,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (authUser) {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`username, avatar_url`)
+        .select(`*`)
         .eq('id', authUser.id)
         .single();
       
@@ -294,9 +294,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const upsertMediaEntry = useCallback(async (entry: MediaEntryUpsert): Promise<MediaEntryRow | null> => {
       if (!user) return null;
       const entryToUpsert: MediaEntryInsert = {
-          ...entry,
+          user_id: user.id,
+          media_id: entry.media_id,
+          progress: entry.progress,
           score: entry.score ?? null,
-          user_id: user.id
+          status: entry.status,
+          media_type: entry.media_type,
       };
       
       const { data, error } = await supabase
@@ -309,7 +312,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error('Error al actualizar/insertar la entrada de media:', error);
         return null;
       }
-      return data || null;
+      return data;
   }, [user]);
 
   const getLibraryList = useCallback(async (): Promise<MediaList[]> => {
@@ -320,7 +323,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .eq('user_id', user.id)
           .in('status', ['CURRENT', 'REPEATING', 'PLANNING']);
       if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia(entries || []);
+      return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
   }, [user]);
   
   const getFullLibraryList = useCallback(async (): Promise<MediaList[]> => {
@@ -335,7 +338,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error("Error al obtener la librería completa:", error); 
         return []; 
     }
-    return _fetchAndMergeMedia(entries || []);
+    return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
   }, [user]);
 
   const getHistoryList = useCallback(async (): Promise<MediaList[]> => {
@@ -348,7 +351,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .order('updated_at', { ascending: false })
           .limit(50);
       if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia(entries || []);
+      return _fetchAndMergeMedia((entries as MediaEntryRow[]) || []);
   }, [user]);
 
   const value = useMemo(() => ({ 

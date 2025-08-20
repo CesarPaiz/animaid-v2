@@ -22,8 +22,8 @@ export type Database = {
           media_id: number;
           progress: number;
           score?: number | null;
-          status: string;
-          media_type: string;
+          status: MediaListStatus;
+          media_type: 'ANIME' | 'MANGA';
         };
         Update: {
           id?: number;
@@ -31,8 +31,8 @@ export type Database = {
           media_id?: number;
           progress?: number;
           score?: number | null;
-          status?: string;
-          media_type?: string;
+          status?: MediaListStatus;
+          media_type?: 'ANIME' | 'MANGA';
           updated_at?: string;
         };
       };
@@ -56,23 +56,23 @@ export type Database = {
           updated_at?: string | null;
         };
       };
-      scheduled_media_entries: {
+      media_schedule: {
         Row: {
-            id: number;
-            user_id: string;
-            media_id: number;
-            scheduled_date: string; // YYYY-MM-DD
-            created_at: string;
+          id: number;
+          user_id: string;
+          media_id: number;
+          scheduled_date: string; // YYYY-MM-DD
+          created_at: string;
         };
         Insert: {
-            user_id: string;
-            media_id: number;
-            scheduled_date: string;
+          user_id: string;
+          media_id: number;
+          scheduled_date: string; // YYYY-MM-DD
         };
         Update: {
-            scheduled_date?: string;
+          scheduled_date?: string;
         };
-      }
+      };
     };
   };
 };
@@ -80,7 +80,7 @@ export type Database = {
 
 type MediaEntryRow = Database['public']['Tables']['media_entries']['Row'];
 type MediaEntryInsert = Database['public']['Tables']['media_entries']['Insert'];
-type ScheduledMediaEntryRow = Database['public']['Tables']['scheduled_media_entries']['Row'];
+type MediaScheduleRow = Database['public']['Tables']['media_schedule']['Row'];
 
 const supabaseUrl = "https://bhlhsvfgvfghgjwwdwzc.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJobGhzdmZndmZnaGdqd3dkd3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NzM3NzQsImV4cCI6MjA3MDQ0OTc3NH0.ehcx-B1VhfKa5TFbpPcpkecB1cBIDUIHzTnNha372CY";
@@ -119,6 +119,24 @@ const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[
     }).filter((item): item is MediaList => item !== null);
 
     return mergedList.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+};
+
+const _fetchAndMergeScheduledMedia = async (entries: MediaScheduleRow[]): Promise<ScheduledMediaList[]> => {
+    if (!entries || entries.length === 0) return [];
+    const mediaIds = entries.map(e => e.media_id);
+    const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
+    const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
+
+    return entries.map((entry): ScheduledMediaList | null => {
+        const media = mediaDetailsMap.get(entry.media_id);
+        if (!media) return null;
+
+        return {
+            scheduleId: entry.id,
+            media,
+            scheduledDate: entry.scheduled_date,
+        };
+    }).filter((item): item is ScheduledMediaList => item !== null);
 };
 
 interface AuthStatus {
@@ -348,7 +366,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const { data, error } = await supabase
           .from('media_entries')
-          .upsert([entryToUpsert], { onConflict: 'user_id,media_id' })
+          .upsert(entryToUpsert, { onConflict: 'user_id,media_id' })
           .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
           .single();
 
@@ -401,49 +419,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const getScheduledForDateRange = useCallback(async (startDate: string, endDate: string): Promise<ScheduledMediaList[]> => {
     if (!user || !supabase) return [];
     const { data: entries, error } = await supabase
-        .from('scheduled_media_entries')
+        .from('media_schedule')
         .select('*')
         .eq('user_id', user.id)
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate)
         .order('scheduled_date', { ascending: true });
-
+    
     if (error) {
-        console.error("Error fetching scheduled entries:", error);
+        console.error("Error fetching schedule:", error);
         return [];
     }
-    if (!entries || entries.length === 0) return [];
-
-    const mediaIds = entries.map(e => e.media_id);
-    const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
-    const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
-
-    return entries.map(entry => {
-        const media = mediaDetailsMap.get(entry.media_id);
-        if (!media) return null;
-        return {
-            scheduleId: entry.id,
-            media: media,
-            scheduledDate: entry.scheduled_date
-        };
-    }).filter((item): item is ScheduledMediaList => item !== null);
+    return _fetchAndMergeScheduledMedia(entries || []);
   }, [user]);
 
   const removeMediaFromSchedule = useCallback(async (scheduleId: number): Promise<boolean> => {
       if (!user || !supabase) return false;
       const { error } = await supabase
-          .from('scheduled_media_entries')
+          .from('media_schedule')
           .delete()
           .eq('id', scheduleId)
           .eq('user_id', user.id);
       
       if (error) {
-          console.error("Error removing scheduled entry:", error);
+          console.error("Error removing from schedule:", error);
           return false;
       }
       return true;
   }, [user]);
-
 
   const value = useMemo(() => ({ 
       user, 

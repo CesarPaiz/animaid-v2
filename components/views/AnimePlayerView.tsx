@@ -107,7 +107,7 @@ const SimpleProviderSelector: React.FC<{
             {ANIME_PROVIDERS.map(provider => {
                 const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
                 const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
-                const canConfigure = statusInfo.searchResults && statusInfo.searchResults.length > 0;
+                const canConfigure = statusInfo.status === 'error' || (statusInfo.searchResults && statusInfo.searchResults.length > 0);
                 
                 return (
                     <div key={provider} className="flex items-center gap-2">

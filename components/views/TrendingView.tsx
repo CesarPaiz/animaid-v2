@@ -38,20 +38,19 @@ const MediaRow: React.FC<MediaRowProps> = ({ title, mediaList, isLoading, onMedi
                     </div>
                 ))}
                 </div>
-                {/* --- Desktop Scroll Buttons --- */}
                 <button
                     onClick={() => scroll('left')}
                     aria-label="Scroll left"
-                    className="hidden md:flex absolute top-1/2 -translate-y-1/2 left-0 z-20 w-12 h-full items-center justify-center bg-gradient-to-r from-gray-950/80 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 focus:outline-none"
+                    className="absolute top-1/2 -translate-y-1/2 left-2 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100 hover:bg-black/80 hover:scale-110 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
-                    <ChevronLeftIcon className="w-8 h-8" />
+                    <ChevronLeftIcon className="h-6 w-6" />
                 </button>
                 <button
                     onClick={() => scroll('right')}
                     aria-label="Scroll right"
-                    className="hidden md:flex absolute top-1/2 -translate-y-1/2 right-0 z-20 w-12 h-full items-center justify-center bg-gradient-to-l from-gray-950/80 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 focus:outline-none"
+                    className="absolute top-1/2 -translate-y-1/2 right-2 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100 hover:bg-black/80 hover:scale-110 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
-                    <ChevronRightIcon className="w-8 h-8" />
+                    <ChevronRightIcon className="h-6 w-6" />
                 </button>
             </div>
             )}
@@ -60,9 +59,11 @@ const MediaRow: React.FC<MediaRowProps> = ({ title, mediaList, isLoading, onMedi
 };
 
 const LastWatchedCard: React.FC<{ list: MediaList[], onMediaSelect: (media: Media) => void }> = ({ list, onMediaSelect }) => {
-    // Filter for items that have progress and are not marked as completed by the user.
-    // The list is pre-sorted by `updatedAt` descending from `getHistoryList`.
-    const lastWatched = list.filter(item => item.progress > 0 && item.status !== MediaListStatus.COMPLETED)[0];
+    const continueWatchingStatuses: MediaListStatus[] = [MediaListStatus.CURRENT, MediaListStatus.REPEATING, MediaListStatus.PAUSED];
+    const lastWatched = list.find(item => 
+        item.progress > 0 &&
+        continueWatchingStatuses.includes(item.status)
+    );
 
     if (!lastWatched) return null;
 
@@ -108,9 +109,9 @@ const TrendingView: React.FC<TrendingViewProps> = ({ onMediaSelect, isActive }) 
   const [trending, setTrending] = useState<Media[]>([]);
   const [popularAnime, setPopularAnime] = useState<Media[]>([]);
   const [popularManga, setPopularManga] = useState<Media[]>([]);
-  const [userHistory, setUserHistory] = useState<MediaList[]>([]);
+  const [fullLibrary, setFullLibrary] = useState<MediaList[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user, getHistoryList } = useAuth();
+  const { user, getFullLibraryList } = useAuth();
 
   useEffect(() => {
     if (!isActive) return;
@@ -122,18 +123,18 @@ const TrendingView: React.FC<TrendingViewProps> = ({ onMediaSelect, isActive }) 
           trendingData,
           popularAnimeData,
           popularMangaData,
-          historyData,
+          libraryData,
         ] = await Promise.all([
           getTrendingAnime(),
           getPopularAnime(),
           getPopularManga(),
-          user ? getHistoryList() : Promise.resolve<MediaList[]>([]),
+          user ? getFullLibraryList() : Promise.resolve<MediaList[]>([]),
         ]);
         
         setTrending(trendingData);
         setPopularAnime(popularAnimeData);
         setPopularManga(popularMangaData);
-        setUserHistory(historyData);
+        setFullLibrary(libraryData);
 
       } catch (error) {
         console.error("Failed to fetch trending media:", error);
@@ -143,7 +144,7 @@ const TrendingView: React.FC<TrendingViewProps> = ({ onMediaSelect, isActive }) 
     };
 
     fetchData();
-  }, [user, getHistoryList, isActive]);
+  }, [user, getFullLibraryList, isActive]);
 
   return (
     <div className="pt-8">
@@ -156,7 +157,7 @@ const TrendingView: React.FC<TrendingViewProps> = ({ onMediaSelect, isActive }) 
         </p>
       </header>
       
-      {user && !isLoading && userHistory.length > 0 && <LastWatchedCard list={userHistory} onMediaSelect={onMediaSelect} />}
+      {user && !isLoading && fullLibrary.length > 0 && <LastWatchedCard list={fullLibrary} onMediaSelect={onMediaSelect} />}
 
       <MediaRow title="Tendencias del Momento" mediaList={trending} isLoading={isLoading} onMediaSelect={onMediaSelect} />
       <MediaRow title="Anime Popular" mediaList={popularAnime} isLoading={isLoading} onMediaSelect={onMediaSelect} />

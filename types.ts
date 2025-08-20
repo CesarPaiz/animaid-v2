@@ -104,5 +104,5 @@ export interface Genre {
 export interface ScheduledMediaList {
   scheduleId: number;
   media: Media;
-  scheduledDate: string; // YYYY-MM-DD
+  scheduledDate: string;
 }

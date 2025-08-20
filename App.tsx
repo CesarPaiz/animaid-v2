@@ -10,12 +10,13 @@ import AnimePlayerView from './components/views/AnimePlayerView';
 import MangaReaderView from './components/views/MangaReaderView';
 import HistoryView from './components/views/HistoryView';
 import { useAuth } from './context/AuthContext';
-import { Media, MediaFormat, MediaListStatus } from './types';
+import { Media, MediaFormat, MediaListStatus, View, MainView } from './types';
 import Spinner from './components/Spinner';
 import { CloseIcon } from './components/icons';
 import { getMediaDetails } from './services/anilistService';
 
-type View = 'trending' | 'search' | 'library' | 'history' | 'settings' | 'media' | 'play';
+const MAIN_VIEWS: MainView[] = ['home', 'search', 'library', 'history', 'settings'];
+
 
 const AuthStatusOverlay: React.FC<{ status: any; onClose: () => void; }> = ({ status, onClose }) => {
   if (!status.message) {
@@ -125,19 +126,19 @@ function useRoute() {
         const handler = () => setHash(window.location.hash);
         window.addEventListener('hashchange', handler);
         if (window.location.hash === '' || window.location.hash === '#') {
-            window.location.hash = '#/trending';
+            window.location.hash = '#/home';
         }
         return () => window.removeEventListener('hashchange', handler);
     }, []);
     
-    const path = (hash.replace(/^#\/?/, '') || 'trending').split('/');
+    const path = (hash.replace(/^#\/?/, '') || 'home').split('/');
     const [page, ...params] = path;
     
     return { page: page as View, params };
 }
 
 const App: React.FC = () => {
-  const { user, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry } = useAuth();
+  const { user, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, isForceReloading } = useAuth();
   const { page, params } = useRoute();
   const [currentMedia, setCurrentMedia] = useState<Media | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -238,7 +239,7 @@ const App: React.FC = () => {
                     if (active) setCurrentMedia(media);
                 } catch(e) {
                     console.error("Failed to load media", e);
-                    if (active) window.location.hash = '#/trending';
+                    if (active) window.location.hash = '#/home';
                 } finally {
                     if (active) setIsLoading(false);
                 }
@@ -252,23 +253,15 @@ const App: React.FC = () => {
     return () => { active = false; };
   }, [page, params.join(','), getMediaEntry, currentMedia?.id]);
   
-  const renderMainView = (page: View) => {
-    switch (page) {
-      case 'trending':
-        return <TrendingView onMediaSelect={handleMediaSelect} />;
-      case 'search':
-        return <SearchView onMediaSelect={handleMediaSelect} />;
-      case 'library':
-        return <LibraryView onMediaSelect={handleMediaSelect} />;
-      case 'history':
-        return <HistoryView onMediaSelect={handleMediaSelect} />;
-      case 'settings':
-        return <SettingsView />;
-      default:
-        return <TrendingView onMediaSelect={handleMediaSelect} />;
-    }
-  };
-  
+  if (isForceReloading) {
+    return (
+        <div className="fixed inset-0 bg-gray-950/90 z-[300] flex flex-col items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+            <Spinner />
+            <p className="mt-4 text-lg font-semibold text-gray-100 text-center">La carga está tardando más de lo esperado.<br/>Refrescando la aplicación...</p>
+        </div>
+    );
+  }
+
   if (authStatus.isLoading && !user) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -308,16 +301,36 @@ const App: React.FC = () => {
     }
     return <AnimePlayerView media={currentMedia} episodeNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onEpisodeChange={handleUnitChange} />;
   }
+
+  const activePage = (MAIN_VIEWS as readonly string[]).includes(page) ? page as MainView : 'home';
   
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200">
       <AuthStatusOverlay status={authStatus} onClose={clearAuthStatus} />
         <div className="md:flex">
-          <SideNav activeView={page} showLibrary={!!user} />
+          <SideNav activeView={activePage} showLibrary={!!user} />
           <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-8">
-            {renderMainView(page)}
+            <div className={`view-container ${activePage === 'home' ? 'active' : ''}`}>
+              <TrendingView onMediaSelect={handleMediaSelect} isActive={activePage === 'home'} />
+            </div>
+            <div className={`view-container ${activePage === 'search' ? 'active' : ''}`}>
+              <SearchView onMediaSelect={handleMediaSelect} />
+            </div>
+            {user && (
+              <>
+                <div className={`view-container ${activePage === 'library' ? 'active' : ''}`}>
+                  <LibraryView onMediaSelect={handleMediaSelect} />
+                </div>
+                <div className={`view-container ${activePage === 'history' ? 'active' : ''}`}>
+                  <HistoryView onMediaSelect={handleMediaSelect} />
+                </div>
+              </>
+            )}
+            <div className={`view-container ${activePage === 'settings' ? 'active' : ''}`}>
+              <SettingsView />
+            </div>
           </main>
-          <BottomNav activeView={page} showLibrary={!!user} />
+          <BottomNav activeView={activePage} showLibrary={!!user} />
         </div>
     </div>
   );

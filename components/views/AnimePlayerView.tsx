@@ -2,9 +2,10 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Media, MediaListStatus, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { getAnimeEpisodeSourcesFromProvider, ANIME_PROVIDERS, VideoSource, DebugLogEntry, SearchResult } from '../../services/contentService';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CheckIconSolid, ChevronUpIcon, Cog6ToothIcon, PlayIcon } from '../icons';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CheckIconSolid, ChevronUpIcon, Cog6ToothIcon, PlayIcon, SearchIcon } from '../icons';
 import Spinner from '../Spinner';
 import { getProviderMapping, saveProviderMapping } from '../../services/providerSelection';
+import { sanitizeTitleForProvider } from '../../services/titleSanitizer';
 
 
 interface ProviderStatus {
@@ -43,9 +44,18 @@ const SearchResultSelectorModal: React.FC<{
     providerName: string;
     results: SearchResult[];
     currentSelection?: SearchResult;
+    mediaTitle: string;
     onSelect: (result: SearchResult) => void;
+    onSearch: (newQuery: string) => void;
     onClose: () => void;
-}> = ({ providerName, results, currentSelection, onSelect, onClose }) => {
+}> = ({ providerName, results, currentSelection, mediaTitle, onSelect, onSearch, onClose }) => {
+    const [query, setQuery] = useState(() => sanitizeTitleForProvider(mediaTitle));
+    
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSearch(query);
+    };
+
     return (
         <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -53,6 +63,20 @@ const SearchResultSelectorModal: React.FC<{
                     <h3 className="text-lg font-bold text-white capitalize">Seleccionar resultado para {providerName}</h3>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><CloseIcon className="w-6 h-6"/></button>
                 </header>
+                <div className="p-3 border-b border-gray-700 flex-shrink-0">
+                    <form onSubmit={handleSearch} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="Editar búsqueda..."
+                            className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors flex-shrink-0">
+                            <SearchIcon className="w-5 h-5"/>
+                        </button>
+                    </form>
+                </div>
                 <div className="p-4 overflow-y-auto flex-grow space-y-2">
                     {results.length > 0 ? results.map((result) => {
                         const isSelected = currentSelection?.url === result.url;
@@ -83,6 +107,7 @@ const SimpleProviderSelector: React.FC<{
             {ANIME_PROVIDERS.map(provider => {
                 const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
                 const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
+                const canConfigure = statusInfo.searchResults && statusInfo.searchResults.length > 0;
                 
                 return (
                     <div key={provider} className="flex items-center gap-2">
@@ -99,7 +124,7 @@ const SimpleProviderSelector: React.FC<{
                             {statusInfo.status === 'error' && <span className="text-sm font-medium text-red-400">Error</span>}
                             {isSuccess && <PlayIcon className="w-6 h-6 text-indigo-400" />}
                         </button>
-                        {isSuccess && (
+                        {canConfigure && (
                             <button onClick={() => onShowSelector(provider)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-700/80 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-colors">
                                 <Cog6ToothIcon className="w-6 h-6"/>
                             </button>
@@ -207,7 +232,7 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
         });
         if (updatedEntry) {
             const updatedMedia = { ...media, userProgress: { 
-                progress: updatedEntry.progress, score: updatedEntry.score, status: updatedEntry.status 
+                progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status as MediaListStatus 
             }};
             onProgressUpdate(updatedMedia);
         }
@@ -232,10 +257,10 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
     };
   }, [activeProvider, episodeNumber, media.userProgress?.progress, user, markProgress]);
 
-  const fetchSourcesForProvider = useCallback(async (provider: string, selectedResult?: SearchResult) => {
+  const fetchSourcesForProvider = useCallback(async (provider: string, selectedResult?: SearchResult, customQuery?: string) => {
     setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
 
-    const result = await getAnimeEpisodeSourcesFromProvider(provider, media, episodeNumber, selectedResult);
+    const result = await getAnimeEpisodeSourcesFromProvider(provider, media, episodeNumber, selectedResult, customQuery);
     
     setProviderStatus(prev => new Map(prev).set(provider, { 
         status: result.data && result.data.length > 0 ? 'success' : 'error', 
@@ -250,6 +275,10 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
       saveProviderMapping(media.id, provider, result);
       setSelectorOpenFor(null);
       fetchSourcesForProvider(provider, result);
+  };
+
+  const handleProviderSearch = (provider: string, query: string) => {
+    fetchSourcesForProvider(provider, undefined, query);
   };
 
   useEffect(() => {
@@ -287,7 +316,9 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
                 providerName={selectorOpenFor}
                 results={providerStatus.get(selectorOpenFor)?.searchResults || []}
                 currentSelection={providerStatus.get(selectorOpenFor)?.selectedResult}
+                mediaTitle={media.title.english || media.title.romaji}
                 onSelect={(result) => handleResultSelection(selectorOpenFor, result)}
+                onSearch={(query) => handleProviderSearch(selectorOpenFor, query)}
                 onClose={() => setSelectorOpenFor(null)}
             />
         )}
@@ -296,19 +327,21 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
           <SourceSelectorModal isOpen={isSourceSelectorOpen} onClose={() => setIsSourceSelectorOpen(false)} sources={activeProviderData} activeIndex={activeSourceIndex} onSelect={setActiveSourceIndex}/>
       )}
       
-      <header className="p-3 bg-gray-950/80 backdrop-blur-md flex items-center z-10 flex-shrink-0 border-b border-gray-800/80 absolute top-0 left-0 right-0">
-        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60 transition-colors" aria-label="Volver">
-          <ArrowLeftIcon className="w-6 h-6" />
-        </button>
-        <div className="text-center flex-1 mx-4 min-w-0">
-            <h1 className="text-2xl font-black tracking-tighter text-white">
-                <span className="animated-gradient">Animaid</span>
-            </h1>
-            <h2 className="text-sm text-gray-400 truncate mt-0.5">
-                {media.title.english || media.title.romaji} - Ep. {episodeNumber}
-            </h2>
+      <header className="p-3 bg-gray-950/80 backdrop-blur-md z-10 flex-shrink-0 border-b border-gray-800/80 absolute top-0 left-0 right-0">
+        <div className="w-full max-w-7xl mx-auto flex items-center justify-between">
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60 transition-colors" aria-label="Volver">
+            <ArrowLeftIcon className="w-6 h-6" />
+            </button>
+            <div className="text-center flex-1 mx-4 min-w-0">
+                <h1 className="text-2xl font-black tracking-tighter text-white">
+                    <span className="animated-gradient">Animaid</span>
+                </h1>
+                <h2 className="text-sm text-gray-400 truncate mt-0.5">
+                    {media.title.english || media.title.romaji} - Ep. {episodeNumber}
+                </h2>
+            </div>
+            <div className="w-10 h-10 flex-shrink-0" />
         </div>
-        <div className="w-10 h-10 flex-shrink-0" />
       </header>
 
       <main className="flex-grow w-full flex items-center justify-center relative bg-black overflow-hidden p-2 md:p-4">
@@ -338,7 +371,7 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
       </main>
 
       <footer className="p-3 bg-gray-950/80 backdrop-blur-md z-10 flex-shrink-0 border-t border-gray-800/80 absolute bottom-0 left-0 right-0">
-        <div className="flex flex-col items-center w-full max-w-4xl mx-auto space-y-2">
+        <div className="flex flex-col items-center w-full max-w-5xl mx-auto space-y-2">
             <div className="w-full flex items-center justify-between gap-2">
                 <button onClick={() => onEpisodeChange(episodeNumber - 1)} disabled={episodeNumber <= 1} className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-3 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                     <ChevronLeftIcon className="w-5 h-5" />

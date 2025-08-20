@@ -1,8 +1,6 @@
-
-
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { createClient, type SupabaseClient, type Session, type User as AuthUser, type AuthError } from '@supabase/supabase-js';
-import { User, Media, MediaList, MediaListStatus } from '../types';
+import { User, Media, MediaList, MediaListStatus, ScheduledMediaList } from '../types';
 import { getMultipleMediaDetails } from '../services/anilistService';
 
 export type Database = {
@@ -15,19 +13,17 @@ export type Database = {
           media_id: number;
           progress: number;
           score: number | null;
-          status: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
-          media_type: "ANIME" | "MANGA";
+          status: string;
+          media_type: string;
           updated_at: string;
         };
         Insert: {
-          id?: number;
           user_id: string;
           media_id: number;
           progress: number;
           score?: number | null;
-          status: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
-          media_type: "ANIME" | "MANGA";
-          updated_at?: string;
+          status: string;
+          media_type: string;
         };
         Update: {
           id?: number;
@@ -35,8 +31,8 @@ export type Database = {
           media_id?: number;
           progress?: number;
           score?: number | null;
-          status?: "CURRENT" | "PLANNING" | "COMPLETED" | "DROPPED" | "PAUSED" | "REPEATING";
-          media_type?: "ANIME" | "MANGA";
+          status?: string;
+          media_type?: string;
           updated_at?: string;
         };
       };
@@ -60,6 +56,23 @@ export type Database = {
           updated_at?: string | null;
         };
       };
+      scheduled_media_entries: {
+        Row: {
+            id: number;
+            user_id: string;
+            media_id: number;
+            scheduled_date: string; // YYYY-MM-DD
+            created_at: string;
+        };
+        Insert: {
+            user_id: string;
+            media_id: number;
+            scheduled_date: string;
+        };
+        Update: {
+            scheduled_date?: string;
+        };
+      }
     };
   };
 };
@@ -67,6 +80,7 @@ export type Database = {
 
 type MediaEntryRow = Database['public']['Tables']['media_entries']['Row'];
 type MediaEntryInsert = Database['public']['Tables']['media_entries']['Insert'];
+type ScheduledMediaEntryRow = Database['public']['Tables']['scheduled_media_entries']['Row'];
 
 const supabaseUrl = "https://bhlhsvfgvfghgjwwdwzc.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJobGhzdmZndmZnaGdqd3dkd3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NzM3NzQsImV4cCI6MjA3MDQ0OTc3NH0.ehcx-B1VhfKa5TFbpPcpkecB1cBIDUIHzTnNha372CY";
@@ -91,7 +105,7 @@ const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[
             userProgress: {
                 progress: entry.progress,
                 score: entry.score ?? 0,
-                status: entry.status,
+                status: entry.status as MediaListStatus,
             }
         };
 
@@ -99,7 +113,7 @@ const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[
             media: mediaWithProgress,
             progress: entry.progress,
             score: entry.score ?? 0,
-            status: entry.status,
+            status: entry.status as MediaListStatus,
             updatedAt: new Date(entry.updated_at).getTime() / 1000
         };
     }).filter((item): item is MediaList => item !== null);
@@ -133,11 +147,14 @@ interface AuthContextType {
   getLibraryList: () => Promise<MediaList[]>;
   getFullLibraryList: () => Promise<MediaList[]>;
   getHistoryList: () => Promise<MediaList[]>;
+  getScheduledForDateRange: (startDate: string, endDate: string) => Promise<ScheduledMediaList[]>;
+  removeMediaFromSchedule: (scheduleId: number) => Promise<boolean>;
   isDebugMode: boolean;
   toggleDebugMode: () => void;
   showNsfw: boolean;
   toggleShowNsfw: () => void;
   isSupabaseConfigured: boolean;
+  isForceReloading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -150,6 +167,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     message: null,
     isError: false,
   });
+  const [isForceReloading, setIsForceReloading] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState<boolean>(() => {
     try {
       const item = window.localStorage.getItem('debugMode');
@@ -227,14 +245,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return newUser;
       });
     } else {
-      setUser(currentUser => (currentUser !== null ? null : currentUser));
+      setUser(null);
     }
   }, []);
 
   useEffect(() => {
+    const authTimeout = setTimeout(() => {
+        console.warn("La autenticación está tardando más de 7 segundos. Forzando una recarga de la página.");
+        setIsForceReloading(true);
+        setTimeout(() => {
+            window.location.reload();
+        }, 2000); 
+    }, 7000); 
+
     const fetchSession = async () => {
         if (!supabase) {
             setAuthStatus(prev => ({ ...prev, isLoading: false }));
+            clearTimeout(authTimeout); 
             return;
         }
         try {
@@ -247,14 +274,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setUser(null);
         } finally {
             setAuthStatus(prev => ({ ...prev, isLoading: false }));
+            clearTimeout(authTimeout);
         }
     };
+    
     fetchSession();
 
     if (!supabase) return;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        clearTimeout(authTimeout); 
         setSession(session);
         await handleUser(session?.user ?? null);
         setAuthStatus(prev => ({ ...prev, isLoading: false }));
@@ -262,11 +292,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
 
     return () => {
+      clearTimeout(authTimeout);
       subscription.unsubscribe();
     };
   }, [handleUser]);
 
-  const signIn = useCallback(async (email: string, pass: string): Promise<{ error: AuthError | null }> => {
+  const signIn = useCallback(async (email: string, pass: string) => {
     if (!supabase) {
         setAuthStatus({ isLoading: false, message: "Error: Supabase no está configurado.", isError: true });
         return { error: { message: "Supabase client is not initialized." } as AuthError };
@@ -367,7 +398,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return _fetchAndMergeMedia(entries || []);
   }, [user]);
 
-  const value: AuthContextType = useMemo(() => ({ 
+  const getScheduledForDateRange = useCallback(async (startDate: string, endDate: string): Promise<ScheduledMediaList[]> => {
+    if (!user || !supabase) return [];
+    const { data: entries, error } = await supabase
+        .from('scheduled_media_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate)
+        .order('scheduled_date', { ascending: true });
+
+    if (error) {
+        console.error("Error fetching scheduled entries:", error);
+        return [];
+    }
+    if (!entries || entries.length === 0) return [];
+
+    const mediaIds = entries.map(e => e.media_id);
+    const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
+    const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
+
+    return entries.map(entry => {
+        const media = mediaDetailsMap.get(entry.media_id);
+        if (!media) return null;
+        return {
+            scheduleId: entry.id,
+            media: media,
+            scheduledDate: entry.scheduled_date
+        };
+    }).filter((item): item is ScheduledMediaList => item !== null);
+  }, [user]);
+
+  const removeMediaFromSchedule = useCallback(async (scheduleId: number): Promise<boolean> => {
+      if (!user || !supabase) return false;
+      const { error } = await supabase
+          .from('scheduled_media_entries')
+          .delete()
+          .eq('id', scheduleId)
+          .eq('user_id', user.id);
+      
+      if (error) {
+          console.error("Error removing scheduled entry:", error);
+          return false;
+      }
+      return true;
+  }, [user]);
+
+
+  const value = useMemo(() => ({ 
       user, 
       session, 
       signIn, 
@@ -379,13 +457,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       getLibraryList,
       getFullLibraryList, 
       getHistoryList,
+      getScheduledForDateRange,
+      removeMediaFromSchedule,
       isDebugMode,
       toggleDebugMode,
       showNsfw,
       toggleShowNsfw,
       isSupabaseConfigured,
+      isForceReloading,
     }), [
-      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw, isSupabaseConfigured
+      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, getScheduledForDateRange, removeMediaFromSchedule, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw, isSupabaseConfigured, isForceReloading
   ]);
 
   return (

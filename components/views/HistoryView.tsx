@@ -90,11 +90,13 @@ const HistoryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
                 <p className="text-gray-400 mt-1">Tu actividad más reciente.</p>
             </header>
             <div className="px-4 md:px-0">
-                {userHistory.length > 0 ? (
-                    userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
-                ) : (
-                    renderEmptyState()
-                )}
+                <div className="max-w-4xl mx-auto">
+                    {userHistory.length > 0 ? (
+                        userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
+                    ) : (
+                        renderEmptyState()
+                    )}
+                </div>
             </div>
         </div>
     );

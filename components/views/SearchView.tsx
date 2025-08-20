@@ -72,6 +72,73 @@ const FilterPanel: React.FC<{
     );
 };
 
+const generatePagination = (currentPage: number, totalPages: number): (number | '...')[] => {
+    if (totalPages <= 7) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (currentPage <= 4) {
+        return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (currentPage >= totalPages - 3) {
+        return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+};
+
+const Pagination: React.FC<{
+    currentPage: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+}> = ({ currentPage, totalPages, onPageChange }) => {
+    const paginationItems = generatePagination(currentPage, totalPages);
+
+    return (
+        <div className="flex items-center justify-center gap-1 sm:gap-2">
+            <button
+                onClick={() => onPageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label="Página anterior"
+            >
+                <ChevronLeftIcon className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-1 sm:gap-2">
+                {paginationItems.map((item, index) => {
+                    if (item === '...') {
+                        return (
+                            <span key={`dots-${index}`} className="flex items-center justify-center w-9 h-9 text-sm font-bold text-gray-500">
+                                ...
+                            </span>
+                        );
+                    }
+                    const isActive = item === currentPage;
+                    return (
+                        <button
+                            key={item}
+                            onClick={() => onPageChange(item)}
+                            className={`w-9 h-9 text-sm font-bold rounded-lg transition-all duration-200 flex items-center justify-center ${
+                                isActive
+                                    ? 'bg-indigo-600 text-white shadow-md scale-110'
+                                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:scale-105'
+                            }`}
+                        >
+                            {item}
+                        </button>
+                    );
+                })}
+            </div>
+            <button
+                onClick={() => onPageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                aria-label="Siguiente página"
+            >
+                <ChevronRightIcon className="w-5 h-5" />
+            </button>
+        </div>
+    );
+};
+
 
 const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMediaSelect }) => {
     const [filters, setFilters] = useState<FilterState>({
@@ -87,7 +154,7 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [allGenres, setAllGenres] = useState<Genre[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
-    const [hasNextPage, setHasNextPage] = useState(false);
+    const [lastPage, setLastPage] = useState<number | null>(null);
     const { showNsfw } = useAuth();
     
     useEffect(() => {
@@ -98,6 +165,10 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
         if (!filters.query && !filters.genres?.length) {
             setResults([]);
             return;
+        }
+        
+        if (isNewSearch) {
+            setLastPage(null);
         }
 
         setIsLoading(true);
@@ -112,7 +183,7 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
             };
             const data = await searchMedia(apiFilters, searchPage);
             setResults(data.media);
-            setHasNextPage(data.hasNextPage);
+            setLastPage(data.lastPage || null);
             setCurrentPage(searchPage);
         } catch (error) {
             console.error("Failed to search media:", error);
@@ -171,25 +242,13 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
                     ))}
                 </div>
 
-                {results.length > 0 && (
-                     <div className="flex justify-center items-center gap-4 mt-8">
-                        <button
-                            onClick={() => performSearch(currentPage - 1)}
-                            disabled={currentPage <= 1 || isLoading}
-                            className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                        >
-                            <ChevronLeftIcon className="w-5 h-5" />
-                            <span>Anterior</span>
-                        </button>
-                        <span className="font-semibold text-gray-400">Página {currentPage}</span>
-                        <button
-                            onClick={() => performSearch(currentPage + 1)}
-                            disabled={!hasNextPage || isLoading}
-                            className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                        >
-                            <span>Siguiente</span>
-                            <ChevronRightIcon className="w-5 h-5" />
-                        </button>
+                {results.length > 0 && lastPage && lastPage > 1 && (
+                     <div className="mt-8">
+                        <Pagination 
+                            currentPage={currentPage}
+                            totalPages={lastPage}
+                            onPageChange={(page) => performSearch(page)}
+                        />
                     </div>
                 )}
             </div>

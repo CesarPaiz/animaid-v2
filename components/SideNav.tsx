@@ -1,10 +1,9 @@
 import React from 'react';
-import { TrendingIcon, SearchIcon, LibraryIcon, SettingsIcon, HistoryIcon } from './icons';
-
-type View = 'trending' | 'search' | 'library' | 'history' | 'settings';
+import { HomeIcon, SearchIcon, LibraryIcon, SettingsIcon, HistoryIcon } from './icons';
+import { MainView } from '../types';
 
 interface SideNavProps {
-  activeView: View;
+  activeView: MainView;
   showLibrary: boolean;
 }
 
@@ -34,7 +33,7 @@ const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
 
 const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary }) => {
   const navItems = [
-    { id: 'trending', label: 'Tendencias', icon: <TrendingIcon /> },
+    { id: 'home', label: 'Home', icon: <HomeIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
     ...(showLibrary ? [
       { id: 'library', label: 'Mi Lista', icon: <LibraryIcon /> },

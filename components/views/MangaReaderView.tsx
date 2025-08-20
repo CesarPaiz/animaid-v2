@@ -2,9 +2,11 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Media, MediaListStatus, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { getMangaChapterPagesFromProvider, MANGA_PROVIDERS, MangaPage, DebugLogEntry, SearchResult } from '../../services/contentService';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, Cog6ToothIcon, BookOpenIcon } from '../icons';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, Cog6ToothIcon, BookOpenIcon, SearchIcon } from '../icons';
 import Spinner from '../Spinner';
 import { getProviderMapping, saveProviderMapping } from '../../services/providerSelection';
+import { sanitizeTitleForProvider } from '../../services/titleSanitizer';
+
 
 interface ProviderStatus {
   status: 'loading' | 'success' | 'error' | 'selecting';
@@ -26,9 +28,18 @@ const SearchResultSelectorModal: React.FC<{
     providerName: string;
     results: SearchResult[];
     currentSelection?: SearchResult;
+    mediaTitle: string;
     onSelect: (result: SearchResult) => void;
+    onSearch: (newQuery: string) => void;
     onClose: () => void;
-}> = ({ providerName, results, currentSelection, onSelect, onClose }) => {
+}> = ({ providerName, results, currentSelection, mediaTitle, onSelect, onSearch, onClose }) => {
+    const [query, setQuery] = useState(() => sanitizeTitleForProvider(mediaTitle));
+    
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSearch(query);
+    };
+    
     return (
         <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div className="bg-gray-900/95 border border-gray-700 rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -36,6 +47,20 @@ const SearchResultSelectorModal: React.FC<{
                     <h3 className="text-lg font-bold text-white capitalize">Seleccionar resultado para {providerName}</h3>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><CloseIcon className="w-6 h-6"/></button>
                 </header>
+                <div className="p-3 border-b border-gray-700 flex-shrink-0">
+                    <form onSubmit={handleSearch} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="Editar búsqueda..."
+                            className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors flex-shrink-0">
+                            <SearchIcon className="w-5 h-5"/>
+                        </button>
+                    </form>
+                </div>
                 <div className="p-4 overflow-y-auto flex-grow space-y-2">
                     {results.length > 0 ? results.map((result) => {
                         const isSelected = currentSelection?.url === result.url;
@@ -94,7 +119,7 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
         });
         if (updatedEntry) {
             const updatedMedia = { ...media, userProgress: { 
-                progress: updatedEntry.progress, score: updatedEntry.score, status: updatedEntry.status 
+                progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status as MediaListStatus 
             }};
             onProgressUpdate(updatedMedia);
         }
@@ -107,10 +132,10 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
     onChapterChange(chapterNumber + 1);
   };
   
-  const fetchChapterPages = useCallback(async (provider: string, selectedResult?: SearchResult) => {
+  const fetchChapterPages = useCallback(async (provider: string, selectedResult?: SearchResult, customQuery?: string) => {
     setProviderStatus(prev => new Map(prev).set(provider, { status: 'loading', log: [] }));
 
-    const result = await getMangaChapterPagesFromProvider(provider, media, chapterNumber, selectedResult);
+    const result = await getMangaChapterPagesFromProvider(provider, media, chapterNumber, selectedResult, customQuery);
     
     setProviderStatus(prev => new Map(prev).set(provider, { 
         status: result.data && result.data.length > 0 ? 'success' : 'error', 
@@ -125,6 +150,10 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
       saveProviderMapping(media.id, provider, result);
       setSelectorOpenFor(null);
       fetchChapterPages(provider, result);
+  };
+
+  const handleProviderSearch = (provider: string, query: string) => {
+    fetchChapterPages(provider, undefined, query);
   };
 
   useEffect(() => {
@@ -167,22 +196,26 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
                 providerName={selectorOpenFor}
                 results={providerStatus.get(selectorOpenFor)?.searchResults || []}
                 currentSelection={providerStatus.get(selectorOpenFor)?.selectedResult}
+                mediaTitle={media.title.english || media.title.romaji}
                 onSelect={(result) => handleResultSelection(selectorOpenFor, result)}
+                onSearch={(query) => handleProviderSearch(selectorOpenFor, query)}
                 onClose={() => setSelectorOpenFor(null)}
             />
         )}
         
         <header className={`p-3 bg-gray-950/80 backdrop-blur-md flex items-center z-10 flex-shrink-0 border-b border-gray-800/80 absolute top-0 left-0 right-0 transition-transform duration-300 ${showControls ? 'translate-y-0' : '-translate-y-full'}`}>
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60"><ArrowLeftIcon className="w-6 h-6" /></button>
-            <div className="text-center flex-1 mx-2 min-w-0">
-                 <h1 className="text-2xl font-black tracking-tighter text-white">
-                    <span className="animated-gradient">Animaid</span>
-                 </h1>
-                 <h2 className="text-sm text-gray-400 truncate mt-0.5">
-                    {media.title.english || media.title.romaji} - Cap. {chapterNumber}
-                 </h2>
-            </div>
-             {activeProvider ? (<button onClick={() => setActiveProvider(null)} className="text-sm bg-gray-800 px-3 py-2 rounded-lg capitalize hover:bg-gray-700">Cambiar</button>) : <div className="w-24 h-10"/>}
+           <div className="w-full max-w-7xl mx-auto flex items-center justify-between">
+                <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700/60"><ArrowLeftIcon className="w-6 h-6" /></button>
+                <div className="text-center flex-1 mx-2 min-w-0">
+                    <h1 className="text-2xl font-black tracking-tighter text-white">
+                        <span className="animated-gradient">Animaid</span>
+                    </h1>
+                    <h2 className="text-sm text-gray-400 truncate mt-0.5">
+                        {media.title.english || media.title.romaji} - Cap. {chapterNumber}
+                    </h2>
+                </div>
+                {activeProvider ? (<button onClick={() => setActiveProvider(null)} className="text-sm bg-gray-800 px-3 py-2 rounded-lg capitalize hover:bg-gray-700">Cambiar</button>) : <div className="w-24 h-10"/>}
+           </div>
         </header>
 
         <main ref={scrollContainerRef} className="flex-grow w-full overflow-y-auto bg-black" onClick={() => activeProvider && setShowControls(c => !c)}>
@@ -193,7 +226,8 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
                         {MANGA_PROVIDERS.map(provider => {
                             const statusInfo = providerStatus.get(provider) || { status: 'loading', log: [] };
                             const isSuccess = statusInfo.status === 'success' && statusInfo.data && statusInfo.data.length > 0;
-                            
+                            const canConfigure = statusInfo.searchResults && statusInfo.searchResults.length > 0;
+
                             return (
                                 <div key={provider} className="flex items-center gap-2">
                                     <button
@@ -209,7 +243,7 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
                                         {statusInfo.status === 'error' && <span className="text-sm font-medium text-red-400">Error</span>}
                                         {isSuccess && <BookOpenIcon className="w-6 h-6 text-indigo-400" />}
                                     </button>
-                                     {isSuccess && (
+                                     {canConfigure && (
                                         <button onClick={() => setSelectorOpenFor(provider)} className="p-3 rounded-lg bg-gray-800/70 border border-gray-700/80 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-colors">
                                             <Cog6ToothIcon className="w-6 h-6"/>
                                         </button>

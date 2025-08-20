@@ -39,6 +39,10 @@ export const MediaListStatus = {
 
 export type MediaListStatus = typeof MediaListStatus[keyof typeof MediaListStatus];
 
+export type View = 'home' | 'search' | 'library' | 'history' | 'settings' | 'media' | 'play';
+
+export type MainView = 'home' | 'search' | 'library' | 'history' | 'settings';
+
 export interface MediaTitle {
   romaji: string;
   english?: string;
@@ -95,4 +99,10 @@ export interface MediaList {
 
 export interface Genre {
     name: string;
+}
+
+export interface ScheduledMediaList {
+  scheduleId: number;
+  media: Media;
+  scheduledDate: string; // YYYY-MM-DD
 }

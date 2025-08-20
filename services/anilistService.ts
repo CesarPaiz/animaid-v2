@@ -106,20 +106,22 @@ const transformGraphqlMedia = (apiMedia: any): Media => {
 interface ProcessedPage {
     media: Media[];
     hasNextPage: boolean;
+    lastPage?: number;
 }
 
 // Helper to process a page of media from a GraphQL response.
 const processMediaPage = (data: any): ProcessedPage => {
     const pageData = data?.Page;
-    if (!pageData) return { media: [], hasNextPage: false };
+    if (!pageData) return { media: [], hasNextPage: false, lastPage: 1 };
 
     const mediaList = Array.isArray(pageData.media) 
         ? pageData.media.map(transformGraphqlMedia).filter((m: Media) => m.id)
         : [];
     
     const hasNextPage = pageData.pageInfo?.hasNextPage || false;
+    const lastPage = pageData.pageInfo?.lastPage;
 
-    return { media: mediaList, hasNextPage };
+    return { media: mediaList, hasNextPage, lastPage };
 };
 
 
@@ -189,6 +191,7 @@ export const searchMedia = async (filters: SearchFilters, page: number = 1): Pro
       Page(page: $page, perPage: $perPage) {
         pageInfo {
           hasNextPage
+          lastPage
         }
         media(search: $search, type: $type, sort: $sort, genre_in: $genre_in, format_in: $format_in, status_in: $status_in, isAdult: $isAdult) {
           ...media

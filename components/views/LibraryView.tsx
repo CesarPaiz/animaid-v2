@@ -97,7 +97,8 @@ const LibraryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
                 <p className="text-gray-400 mt-1">Tu progreso de anime y manga, organizado.</p>
             </header>
 
-            <div className="px-4 md:px-0 mb-4 sticky top-0 bg-gray-950/80 backdrop-blur-lg py-2 z-10">
+            {/* Mobile: Horizontal scrolling tabs */}
+            <div className="px-4 md:hidden mb-4 sticky top-0 bg-gray-950/80 backdrop-blur-lg py-2 z-10">
                 <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
                     {STATUS_TABS_ORDERED.map(tab => (
                         <button
@@ -115,12 +116,36 @@ const LibraryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
                 </div>
             </div>
 
-            <div className="px-4 md:px-0">
-                {displayedList.length > 0 ? (
-                    displayedList.map(item => <LibraryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
-                ) : (
-                    renderEmptyState()
-                )}
+            <div className="md:grid md:grid-cols-12 md:gap-8 px-4 md:px-0">
+                {/* Desktop: Vertical navigation */}
+                <nav className="hidden md:block md:col-span-3 lg:col-span-2">
+                    <div className="sticky top-4">
+                        <div className="flex flex-col space-y-1">
+                            {STATUS_TABS_ORDERED.map(tab => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setActiveFilter(tab.key)}
+                                    className={`px-4 py-2 text-left text-sm font-semibold rounded-lg transition-colors duration-200 w-full ${
+                                        activeFilter === tab.key 
+                                        ? 'bg-gray-800 text-indigo-400' 
+                                        : 'text-gray-400 hover:bg-gray-900 hover:text-white'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </nav>
+
+                {/* Content Area */}
+                <div className="md:col-span-9 lg:col-span-10">
+                    {displayedList.length > 0 ? (
+                        displayedList.map(item => <LibraryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
+                    ) : (
+                        renderEmptyState()
+                    )}
+                </div>
             </div>
         </div>
     );

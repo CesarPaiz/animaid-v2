@@ -2,7 +2,6 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Media, MediaListStatus, MediaFormat, MediaStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { ArrowLeftIcon, PlayIcon, StarIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpDownIcon } from '../icons';
-import Spinner from '../Spinner';
 
 interface MediaDetailViewProps {
   media: Media;
@@ -32,6 +31,7 @@ const StatusSelector: React.FC<{
     onStatusChange: (status: MediaListStatus) => void;
 }> = ({ currentStatus, onStatusChange }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [position, setPosition] = useState<'top' | 'bottom'>('top');
     const wrapperRef = useRef<HTMLDivElement>(null);
     const currentOption = STATUS_OPTIONS.find(opt => opt.key === currentStatus);
 
@@ -45,17 +45,32 @@ const StatusSelector: React.FC<{
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [wrapperRef]);
 
+    const toggleOpen = () => {
+        if (!isOpen && wrapperRef.current) {
+            const rect = wrapperRef.current.getBoundingClientRect();
+            // Allow 280px for the dropdown height + margin
+            if (rect.top < 280) {
+                setPosition('bottom');
+            } else {
+                setPosition('top');
+            }
+        }
+        setIsOpen(!isOpen);
+    };
+
     return (
-        <div ref={wrapperRef} className="relative w-40 h-full">
+        <div ref={wrapperRef} className="relative h-12">
             <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="h-full w-full flex items-center justify-between bg-gray-700/80 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                onClick={toggleOpen}
+                className="h-full flex items-center justify-between bg-gray-700/80 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-                <span>{currentOption?.label || 'Estado'}</span>
-                <ChevronUpDownIcon className="w-5 h-5 text-gray-400" />
+                <span className="truncate">{currentOption?.label || 'Estado'}</span>
+                <ChevronUpDownIcon className="w-5 h-5 text-gray-400 flex-shrink-0 ml-1" />
             </button>
             {isOpen && (
-                <div className="absolute bottom-full mb-2 w-full bg-gray-800 rounded-lg shadow-2xl z-20 overflow-hidden border border-gray-700 animate-fade-in">
+                <div className={`absolute z-20 w-48 bg-gray-800 rounded-lg shadow-2xl overflow-hidden border border-gray-700 animate-fade-in ${
+                    position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                }`}>
                     <div className="flex flex-col">
                         {STATUS_OPTIONS.map(opt => (
                             <button
@@ -192,7 +207,7 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
             : `Empezar a ver`;
 
         return (
-             <button onClick={() => onStartPlayback(media, nextUnit)} className="flex-grow flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/30">
+             <button onClick={() => onStartPlayback(media, nextUnit)} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/30">
                 <PlayIcon className="w-5 h-5"/>
                 <span>{buttonText}</span>
             </button>
@@ -204,7 +219,7 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
             return (
                  <button 
                     onClick={() => onStatusChange(MediaListStatus.PLANNING)} 
-                    className="h-full w-12 flex items-center justify-center bg-gray-700/80 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    className="h-12 w-14 flex items-center justify-center bg-gray-700/80 text-white rounded-lg hover:bg-gray-700 transition-colors"
                     aria-label="Añadir a Mi Lista"
                  >
                     <PlusIcon className="w-6 h-6"/>
@@ -230,7 +245,7 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
         const unitsToShow = Array.from({ length: endUnit - startUnit + 1 }, (_, i) => startUnit + i);
 
         return (
-            <section className="mt-8">
+            <div className="mt-8">
                 <h3 className="text-xl font-bold text-white mb-4">
                     {isManga ? 'Capítulos' : 'Episodios'}
                     <span className="text-gray-400 font-medium text-base ml-2">({progress} / {definitiveTotalUnits || '?'})</span>
@@ -257,13 +272,13 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
                         )
                     })}
                 </div>
-            </section>
+            </div>
         );
     }
     
     return (
         <div className="min-h-screen bg-gray-950 text-white animate-fade-in">
-            <div className="relative h-60 md:h-72 lg:h-80 w-full overflow-hidden">
+            <div className="relative h-60 md:h-80 lg:h-96 w-full overflow-hidden">
                 <div className="absolute inset-0" style={{ backgroundColor: media.coverImage.color || '#181820' }}></div>
                 <img 
                     src={media.bannerImage || media.coverImage.extraLarge} 
@@ -283,44 +298,68 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
                 </header>
             </div>
 
-            <main className="p-4 md:p-6 lg:p-8 -mt-28 md:-mt-36 relative z-10">
-                <div className="flex flex-col md:flex-row gap-6">
-                    <div className="flex-shrink-0 w-36 sm:w-48 mx-auto md:mx-0">
-                        <img src={media.coverImage.extraLarge} alt={media.title.romaji} className="w-full h-auto rounded-lg shadow-2xl aspect-[2/3]" />
+            <main className="p-4 md:p-6 lg:p-8 -mt-20 md:-mt-48 lg:-mt-56 relative z-10 max-w-7xl mx-auto">
+                <div className="md:grid md:grid-cols-12 md:gap-8 lg:gap-12">
+                    
+                    {/* --- Left Column (Desktop) --- */}
+                    <div className="md:col-span-4 lg:col-span-3">
+                        <div className="md:sticky md:top-6 space-y-4">
+                            <img src={media.coverImage.extraLarge} alt={media.title.romaji} className="w-48 md:w-full h-auto rounded-lg shadow-2xl aspect-[2/3] mx-auto" />
+                            <div className="flex items-stretch gap-2">
+                                <div className="flex-grow">{renderPlaybackButton()}</div>
+                                {user && (
+                                    <div className="flex-shrink-0">
+                                        {renderStatusControls()}
+                                    </div>
+                                )}
+                            </div>
+                            <section className="hidden md:grid grid-cols-2 gap-4 bg-gray-900/50 rounded-xl p-4">
+                                <MediaInfoItem label="Formato" value={media.format?.replace(/_/g, ' ') || 'N/A'} />
+                                <MediaInfoItem label="Unidades" value={definitiveTotalUnits || '?'} />
+                                <MediaInfoItem label="Estado" value={media.status?.replace(/_/g, ' ') || 'N/A'} />
+                                <MediaInfoItem label="Puntuación" value={
+                                    <span className="flex items-center justify-center gap-1.5">
+                                        <StarIcon className="w-5 h-5 text-yellow-400"/>
+                                        {media.averageScore ? (media.averageScore / 10).toFixed(1) : 'N/A'}
+                                    </span>
+                                } />
+                            </section>
+                        </div>
                     </div>
-                    <div className="flex-grow pt-4 text-center md:text-left">
-                        <h1 className="text-2xl lg:text-3xl font-black tracking-tight">{media.title.english || media.title.romaji}</h1>
-                        <h2 className="text-lg text-gray-400 font-medium">{media.title.native}</h2>
-                        <div className="flex flex-wrap gap-2 my-4 justify-center md:justify-start">
-                            {media.genres.slice(0, 4).map(genre => (
-                                <span key={genre} className="bg-gray-800 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">{genre}</span>
-                            ))}
+
+                    {/* --- Right Column (Desktop) --- */}
+                    <div className="md:col-span-8 lg:col-span-9 mt-6 md:mt-0">
+                        <div className="text-center md:text-left">
+                            <h1 className="text-2xl lg:text-4xl font-black tracking-tight">{media.title.english || media.title.romaji}</h1>
+                            <h2 className="text-lg text-gray-400 font-medium">{media.title.native}</h2>
+                            <div className="flex flex-wrap gap-2 my-4 justify-center md:justify-start">
+                                {media.genres.slice(0, 5).map(genre => (
+                                    <span key={genre} className="bg-gray-800 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">{genre}</span>
+                                ))}
+                            </div>
                         </div>
-                         <div className="flex items-stretch gap-2 mt-4">
-                            {renderPlaybackButton()}
-                            {user && <div className="flex-shrink-0 h-12">{renderStatusControls()}</div>}
-                        </div>
+
+                        {/* --- Info Section (Mobile) --- */}
+                        <section className="grid md:hidden grid-cols-2 gap-4 bg-gray-900/50 rounded-xl p-4 my-8">
+                            <MediaInfoItem label="Formato" value={media.format?.replace(/_/g, ' ') || 'N/A'} />
+                            <MediaInfoItem label="Unidades" value={definitiveTotalUnits || '?'} />
+                            <MediaInfoItem label="Estado" value={media.status?.replace(/_/g, ' ') || 'N/A'} />
+                            <MediaInfoItem label="Puntuación" value={
+                                <span className="flex items-center justify-center gap-1.5">
+                                    <StarIcon className="w-5 h-5 text-yellow-400"/>
+                                    {media.averageScore ? (media.averageScore / 10).toFixed(1) : 'N/A'}
+                                </span>
+                            } />
+                        </section>
+
+                        <section className="prose prose-invert max-w-none text-gray-300 mt-8">
+                            <h3 className="text-xl font-bold text-white">Sinopsis</h3>
+                            <p className="text-sm md:text-base" dangerouslySetInnerHTML={{ __html: media.description?.replace(/\n/g, '<br />') || 'No hay sinopsis disponible.' }} />
+                        </section>
+                        
+                        {renderUnitList()}
                     </div>
                 </div>
-
-                <section className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-900/50 rounded-xl p-4 my-8">
-                    <MediaInfoItem label="Formato" value={media.format?.replace(/_/g, ' ') || 'N/A'} />
-                    <MediaInfoItem label="Unidades" value={definitiveTotalUnits || '?'} />
-                    <MediaInfoItem label="Estado" value={media.status?.replace(/_/g, ' ') || 'N/A'} />
-                    <MediaInfoItem label="Puntuación" value={
-                        <span className="flex items-center justify-center gap-1.5">
-                            <StarIcon className="w-5 h-5 text-yellow-400"/>
-                            {media.averageScore ? (media.averageScore / 10).toFixed(1) : 'N/A'}
-                        </span>
-                    } />
-                </section>
-
-                <section className="prose prose-invert max-w-none text-gray-300">
-                    <h3 className="text-xl font-bold text-white">Sinopsis</h3>
-                    <p className="text-sm md:text-base" dangerouslySetInnerHTML={{ __html: media.description?.replace(/\n/g, '<br />') || 'No hay sinopsis disponible.' }} />
-                </section>
-                
-                {renderUnitList()}
             </main>
         </div>
     );

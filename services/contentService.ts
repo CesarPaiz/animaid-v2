@@ -86,7 +86,8 @@ export const getAnimeEpisodeSourcesFromProvider = async (
     provider: string, 
     media: Media, 
     episodeNumber: number,
-    preSelectedResult?: SearchResult
+    preSelectedResult?: SearchResult,
+    customSearchQuery?: string
 ): Promise<ProviderResult<VideoSource[]>> => {
     const log: DebugLogEntry[] = [];
     let searchResults: SearchResult[] | undefined;
@@ -97,13 +98,16 @@ export const getAnimeEpisodeSourcesFromProvider = async (
             selectedResult = preSelectedResult;
             log.push({ step: `Paso 1: Usando resultado pre-seleccionado`, extracted: selectedResult.url });
         } else {
-            const sanitizedTitle = sanitizeTitleForProvider(media.title.english || media.title.romaji);
-            const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(sanitizedTitle)}`;
-            log.push({ step: `Paso 1: Buscar anime con filtro`, url: searchUrl, extracted: `Título sanitizado: "${sanitizedTitle}"` });
+            const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+            const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+            log.push({ step: `Paso 1: Buscar anime con filtro`, url: searchUrl, extracted: `Buscando: "${titleToSearch}"` });
             const searchData = await fetchWithTimeout(searchUrl);
             log[log.length-1].response = searchData;
             
-            if (!searchData.results || searchData.results.length === 0) throw new Error(`No se encontraron resultados para "${sanitizedTitle}"`);
+            if (!searchData.results || searchData.results.length === 0) {
+                 searchResults = [];
+                 throw new Error(`No se encontraron resultados para "${titleToSearch}"`);
+            }
             
             searchResults = searchData.results;
             selectedResult = searchResults![0];
@@ -115,6 +119,14 @@ export const getAnimeEpisodeSourcesFromProvider = async (
         log.push({ step: 'Paso 2: Obtener información del anime', url: infoUrl });
         const animeInfo = await fetchWithTimeout(infoUrl);
         log[log.length-1].response = animeInfo;
+        
+        // Populate searchResults even on subsequent successful fetches
+        if (!searchResults && animeInfo.title) {
+             const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+             const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+             const searchData = await fetchWithTimeout(searchUrl);
+             searchResults = searchData.results || [];
+        }
         
         if (!animeInfo.episodes || animeInfo.episodes.length === 0) throw new Error('No se encontraron episodios para este anime.');
         
@@ -153,7 +165,8 @@ export const getMangaChapterPagesFromProvider = async (
     provider: string,
     media: Media,
     chapterNumber: number,
-    preSelectedResult?: SearchResult
+    preSelectedResult?: SearchResult,
+    customSearchQuery?: string
 ): Promise<ProviderResult<MangaPage[]>> => {
     const log: DebugLogEntry[] = [];
     let searchResults: SearchResult[] | undefined;
@@ -164,13 +177,16 @@ export const getMangaChapterPagesFromProvider = async (
             selectedResult = preSelectedResult;
             log.push({ step: `Paso 1: Usando resultado pre-seleccionado`, extracted: selectedResult.url });
         } else {
-            const sanitizedTitle = sanitizeTitleForProvider(media.title.english || media.title.romaji);
-            const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(sanitizedTitle)}`;
-            log.push({ step: `Paso 1: Buscar manga con filtro`, url: searchUrl, extracted: `Título sanitizado: "${sanitizedTitle}"` });
+            const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+            const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+            log.push({ step: `Paso 1: Buscar manga con filtro`, url: searchUrl, extracted: `Buscando: "${titleToSearch}"` });
             const searchData = await fetchWithTimeout(searchUrl);
             log[log.length - 1].response = searchData;
 
-            if (!searchData.results || searchData.results.length === 0) throw new Error(`No se encontraron resultados para "${sanitizedTitle}"`);
+            if (!searchData.results || searchData.results.length === 0) {
+                searchResults = [];
+                throw new Error(`No se encontraron resultados para "${titleToSearch}"`);
+            }
             
             searchResults = searchData.results;
             selectedResult = searchResults![0];
@@ -181,6 +197,13 @@ export const getMangaChapterPagesFromProvider = async (
         log.push({ step: `Paso 2: Obtener información del manga`, url: infoUrl });
         const mangaInfo = await fetchWithTimeout(infoUrl);
         log[log.length - 1].response = mangaInfo;
+
+        if (!searchResults && mangaInfo.title) {
+             const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+             const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+             const searchData = await fetchWithTimeout(searchUrl);
+             searchResults = searchData.results || [];
+        }
         
         if (!mangaInfo.chapters || mangaInfo.chapters.length === 0) throw new Error('No se encontraron capítulos.');
         

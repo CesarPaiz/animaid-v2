@@ -3,12 +3,6 @@ import { Media, MediaFormat, MediaStatus, MediaSort, Genre } from '../types';
 // The official AniList GraphQL endpoint.
 const API_URL = 'https://graphql.anilist.co';
 
-// --- Caching Layer ---
-// In-memory cache to store API responses and reduce redundant requests to AniList.
-const apiCache = new Map<string, { timestamp: number; data: any }>();
-const CACHE_DURATION_MS = 25 * 60 * 1000; // Cache responses for 25 minutes.
-
-
 // A reusable GraphQL fragment to get all the media fields we need.
 // This ensures consistency and avoids repetition.
 const mediaFragment = `
@@ -41,17 +35,9 @@ const mediaFragment = `
   }
 `;
 
-// API Helper for GraphQL requests with caching.
+// API Helper for GraphQL requests.
 async function fetchFromGraphQL(query: string, variables: Record<string, any> = {}) {
-  const cacheKey = JSON.stringify({ query, variables });
-  const cachedItem = apiCache.get(cacheKey);
-
-  // If a valid, non-expired item is in the cache, return it.
-  if (cachedItem && (Date.now() - cachedItem.timestamp < CACHE_DURATION_MS)) {
-    return cachedItem.data;
-  }
-  
-  // Otherwise, fetch from the network.
+  // Fetch directly from the network, cache has been removed.
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -76,9 +62,6 @@ async function fetchFromGraphQL(query: string, variables: Record<string, any> = 
     throw new Error(`GraphQL Query Error: ${JSON.stringify(json.errors)}`);
   }
   
-  // Store the new data in the cache with the current timestamp.
-  apiCache.set(cacheKey, { timestamp: Date.now(), data: json.data });
-
   return json.data;
 }
 
@@ -125,7 +108,7 @@ const processMediaPage = (data: any): ProcessedPage => {
 };
 
 
-// --- Rewritten API Functions ---
+// --- API Functions ---
 
 export const getTrendingAnime = async (): Promise<Media[]> => {
   const query = `

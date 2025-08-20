@@ -291,9 +291,11 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
                     <button onClick={onClose} className="p-2 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-colors" aria-label="Volver">
                         <ArrowLeftIcon className="w-6 h-6" />
                     </button>
-                    <h1 className="text-3xl font-black tracking-tighter text-white">
-                        <span className="animated-gradient">Animaid</span>
-                    </h1>
+                    <div className="bg-black/50 backdrop-blur-sm rounded-full px-4 py-1">
+                        <h1 className="text-3xl font-black tracking-tighter text-white">
+                            <span className="animated-gradient">Animaid</span>
+                        </h1>
+                    </div>
                     <div className="w-10 h-10 flex-shrink-0" />
                 </header>
             </div>

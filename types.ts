@@ -28,16 +28,14 @@ export enum MediaSort {
     START_DATE_DESC = 'START_DATE_DESC',
 }
 
-export const MediaListStatus = {
-    CURRENT: 'CURRENT',
-    PLANNING: 'PLANNING',
-    COMPLETED: 'COMPLETED',
-    DROPPED: 'DROPPED',
-    PAUSED: 'PAUSED',
-    REPEATING: 'REPEATING'
-} as const;
-
-export type MediaListStatus = typeof MediaListStatus[keyof typeof MediaListStatus];
+export enum MediaListStatus {
+    CURRENT = 'CURRENT',
+    PLANNING = 'PLANNING',
+    COMPLETED = 'COMPLETED',
+    DROPPED = 'DROPPED',
+    PAUSED = 'PAUSED',
+    REPEATING = 'REPEATING'
+}
 
 export type View = 'home' | 'search' | 'library' | 'history' | 'settings' | 'media' | 'play';
 

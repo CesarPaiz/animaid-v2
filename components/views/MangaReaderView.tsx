@@ -30,14 +30,21 @@ const SearchResultSelectorModal: React.FC<{
     currentSelection?: SearchResult;
     mediaTitle: string;
     onSelect: (result: SearchResult) => void;
-    onSearch: (newQuery: string) => void;
+    onSearch: (newQuery: string) => Promise<void>;
     onClose: () => void;
 }> = ({ providerName, results, currentSelection, mediaTitle, onSelect, onSearch, onClose }) => {
     const [query, setQuery] = useState(() => sanitizeTitleForProvider(mediaTitle));
+    const [isSearching, setIsSearching] = useState(false);
     
-    const handleSearch = (e: React.FormEvent) => {
+    const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
-        onSearch(query);
+        if (isSearching) return;
+        setIsSearching(true);
+        try {
+            await onSearch(query);
+        } finally {
+            setIsSearching(false);
+        }
     };
     
     return (
@@ -56,8 +63,12 @@ const SearchResultSelectorModal: React.FC<{
                             placeholder="Editar búsqueda..."
                             className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
-                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors flex-shrink-0">
-                            <SearchIcon className="w-5 h-5"/>
+                        <button 
+                            type="submit" 
+                            disabled={isSearching}
+                            className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-colors flex-shrink-0 w-14 flex items-center justify-center disabled:bg-indigo-800"
+                        >
+                            {isSearching ? <div className="w-5 h-5 border-2 border-gray-400 border-t-white rounded-full animate-spin"></div> : <SearchIcon className="w-5 h-5"/>}
                         </button>
                     </form>
                 </div>
@@ -119,7 +130,7 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
         });
         if (updatedEntry) {
             const updatedMedia = { ...media, userProgress: { 
-                progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status as MediaListStatus 
+                progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status
             }};
             onProgressUpdate(updatedMedia);
         }
@@ -152,8 +163,8 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
       fetchChapterPages(provider, result);
   };
 
-  const handleProviderSearch = (provider: string, query: string) => {
-    fetchChapterPages(provider, undefined, query);
+  const handleProviderSearch = async (provider: string, query: string) => {
+    await fetchChapterPages(provider, undefined, query);
   };
 
   useEffect(() => {

@@ -13,8 +13,8 @@ export type Database = {
           media_id: number;
           progress: number;
           score: number | null;
-          status: string;
-          media_type: string;
+          status: MediaListStatus;
+          media_type: 'ANIME' | 'MANGA';
           updated_at: string;
         };
         Insert: {
@@ -56,31 +56,35 @@ export type Database = {
           updated_at?: string | null;
         };
       };
-      media_schedule: {
-        Row: {
+      scheduled_media: {
+         Row: {
           id: number;
           user_id: string;
           media_id: number;
-          scheduled_date: string; // YYYY-MM-DD
+          scheduled_date: string; // date as 'YYYY-MM-DD'
           created_at: string;
         };
         Insert: {
           user_id: string;
           media_id: number;
-          scheduled_date: string; // YYYY-MM-DD
+          scheduled_date: string;
         };
         Update: {
           scheduled_date?: string;
         };
-      };
+      }
     };
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
   };
 };
 
 
 type MediaEntryRow = Database['public']['Tables']['media_entries']['Row'];
 type MediaEntryInsert = Database['public']['Tables']['media_entries']['Insert'];
-type MediaScheduleRow = Database['public']['Tables']['media_schedule']['Row'];
+type ScheduledMediaRow = Database['public']['Tables']['scheduled_media']['Row'];
 
 const supabaseUrl = "https://bhlhsvfgvfghgjwwdwzc.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJobGhzdmZndmZnaGdqd3dkd3pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NzM3NzQsImV4cCI6MjA3MDQ0OTc3NH0.ehcx-B1VhfKa5TFbpPcpkecB1cBIDUIHzTnNha372CY";
@@ -105,7 +109,7 @@ const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[
             userProgress: {
                 progress: entry.progress,
                 score: entry.score ?? 0,
-                status: entry.status as MediaListStatus,
+                status: entry.status,
             }
         };
 
@@ -113,30 +117,12 @@ const _fetchAndMergeMedia = async (entries: MediaEntryRow[]): Promise<MediaList[
             media: mediaWithProgress,
             progress: entry.progress,
             score: entry.score ?? 0,
-            status: entry.status as MediaListStatus,
+            status: entry.status,
             updatedAt: new Date(entry.updated_at).getTime() / 1000
         };
     }).filter((item): item is MediaList => item !== null);
 
     return mergedList.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-};
-
-const _fetchAndMergeScheduledMedia = async (entries: MediaScheduleRow[]): Promise<ScheduledMediaList[]> => {
-    if (!entries || entries.length === 0) return [];
-    const mediaIds = entries.map(e => e.media_id);
-    const mediaDetailsList = await getMultipleMediaDetails(mediaIds);
-    const mediaDetailsMap = new Map(mediaDetailsList.map(m => [m.id, m]));
-
-    return entries.map((entry): ScheduledMediaList | null => {
-        const media = mediaDetailsMap.get(entry.media_id);
-        if (!media) return null;
-
-        return {
-            scheduleId: entry.id,
-            media,
-            scheduledDate: entry.scheduled_date,
-        };
-    }).filter((item): item is ScheduledMediaList => item !== null);
 };
 
 interface AuthStatus {
@@ -162,11 +148,11 @@ interface AuthContextType {
   clearAuthStatus: () => void;
   getMediaEntry: (mediaId: number) => Promise<MediaEntryRow | null>;
   upsertMediaEntry: (entry: MediaEntryUpsert) => Promise<MediaEntryRow | null>;
-  getLibraryList: () => Promise<MediaList[]>;
   getFullLibraryList: () => Promise<MediaList[]>;
   getHistoryList: () => Promise<MediaList[]>;
   getScheduledForDateRange: (startDate: string, endDate: string) => Promise<ScheduledMediaList[]>;
   removeMediaFromSchedule: (scheduleId: number) => Promise<boolean>;
+  addMediaToSchedule: (mediaId: number, date: string) => Promise<ScheduledMediaList | null>;
   isDebugMode: boolean;
   toggleDebugMode: () => void;
   showNsfw: boolean;
@@ -178,311 +164,245 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [authStatus, setAuthStatus] = useState<AuthStatus>({
-    isLoading: true,
-    message: null,
-    isError: false,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>({ isLoading: true, message: null, isError: false });
+  const [isDebugMode, setIsDebugMode] = useState(() => localStorage.getItem('animaid_debug') === 'true');
+  const [showNsfw, setShowNsfw] = useState(() => localStorage.getItem('animaid_showNsfw') === 'true');
   const [isForceReloading, setIsForceReloading] = useState(false);
-  const [isDebugMode, setIsDebugMode] = useState<boolean>(() => {
-    try {
-      const item = window.localStorage.getItem('debugMode');
-      return item ? JSON.parse(item) === true : false;
-    } catch (error) {
-      console.error("Error al leer 'debugMode' desde localStorage:", error);
-      return false;
-    }
-  });
-  const [showNsfw, setShowNsfw] = useState<boolean>(() => {
-    try {
-      const item = window.localStorage.getItem('showNsfw');
-      return item ? JSON.parse(item) === true : false;
-    } catch (error) {
-      console.error("Error al leer 'showNsfw' desde localStorage:", error);
-      return false;
-    }
-  });
-  const isSupabaseConfigured = !!supabase;
+  
+  const sessionRef = React.useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
-  const toggleDebugMode = useCallback(() => {
-    setIsDebugMode(prev => {
-        const newState = !prev;
-        try {
-            window.localStorage.setItem('debugMode', JSON.stringify(newState));
-        } catch (error) {
-            console.error("No se pudo guardar 'debugMode' en localStorage:", error);
-        }
-        return newState;
-    });
-  }, []);
+  const isSupabaseConfigured = useMemo(() => !!supabase, []);
 
-  const toggleShowNsfw = useCallback(() => {
-    setShowNsfw(prev => {
-      const newState = !prev;
-      try {
-        window.localStorage.setItem('showNsfw', JSON.stringify(newState));
-      } catch (error) {
-        console.error("No se pudo guardar 'showNsfw' en localStorage:", error);
+  useEffect(() => {
+    if (!supabase) {
+      setAuthStatus({ isLoading: false, message: "Supabase not configured", isError: true });
+      return;
+    }
+
+    const forceReloadTimeout = setTimeout(() => {
+        setIsForceReloading(true);
+        setTimeout(() => window.location.reload(), 1500); 
+    }, 7000);
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.error("Error getting session:", error);
+        clearTimeout(forceReloadTimeout);
+        setAuthStatus({ isLoading: false, message: 'Failed to connect to authentication service.', isError: true });
+        return;
       }
-      return newState;
+      clearTimeout(forceReloadTimeout);
+      setSession(data.session);
     });
-  }, []);
 
-  const clearAuthStatus = useCallback(() => {
-    setAuthStatus(prev => {
-        if (prev.message === null && !prev.isError) return prev;
-        return { ...prev, message: null, isError: false };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (JSON.stringify(session) !== JSON.stringify(sessionRef.current)) {
+          setSession(session);
+      }
     });
-  }, []);
 
-  const handleUser = useCallback(async (authUser: AuthUser | null) => {
-    if (authUser && supabase) {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select(`username, avatar_url`)
-        .eq('id', authUser.id)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') {
-        console.error("Error al obtener el perfil de usuario:", error)
-      };
-      
-      const newUser = {
-        id: authUser.id,
-        email: authUser.email,
-        username: profile?.username || 'Invitado',
-        avatar_url: profile?.avatar_url || undefined
-      };
-      
-      setUser(currentUser => {
-          if (JSON.stringify(currentUser) === JSON.stringify(newUser)) {
-              return currentUser;
-          }
-          return newUser;
-      });
-    } else {
-      setUser(null);
-    }
+    return () => {
+      subscription?.unsubscribe();
+      clearTimeout(forceReloadTimeout);
+    };
   }, []);
 
   useEffect(() => {
-    const authTimeout = setTimeout(() => {
-        console.warn("La autenticación está tardando más de 7 segundos. Forzando una recarga de la página.");
-        setIsForceReloading(true);
-        setTimeout(() => {
-            window.location.reload();
-        }, 2000); 
-    }, 7000); 
-
-    const fetchSession = async () => {
-        if (!supabase) {
-            setAuthStatus(prev => ({ ...prev, isLoading: false }));
-            clearTimeout(authTimeout); 
-            return;
-        }
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            setSession(session);
-            await handleUser(session?.user ?? null);
-        } catch (error) {
-            console.error("Error al obtener la sesión en la carga inicial:", error);
-            setSession(null);
-            setUser(null);
-        } finally {
-            setAuthStatus(prev => ({ ...prev, isLoading: false }));
-            clearTimeout(authTimeout);
-        }
-    };
-    
-    fetchSession();
-
-    if (!supabase) return;
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        clearTimeout(authTimeout); 
-        setSession(session);
-        await handleUser(session?.user ?? null);
-        setAuthStatus(prev => ({ ...prev, isLoading: false }));
-      }
-    );
-
-    return () => {
-      clearTimeout(authTimeout);
-      subscription.unsubscribe();
-    };
-  }, [handleUser]);
+    if (session) {
+      const authUser = session.user;
+      supabase
+        .from('profiles')
+        .select(`username, avatar_url`)
+        .eq('id', authUser.id)
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Error fetching user profile:', error);
+            setAuthStatus({ isLoading: false, message: 'Could not load user profile.', isError: true });
+          } else if (data) {
+            setUser({
+              id: authUser.id,
+              username: data.username || 'User',
+              avatar_url: data.avatar_url || undefined,
+              email: authUser.email,
+            });
+            setAuthStatus({ isLoading: false, message: null, isError: false });
+          }
+        });
+    } else {
+      setUser(null);
+      setAuthStatus({ isLoading: false, message: null, isError: false });
+    }
+  }, [session]);
 
   const signIn = useCallback(async (email: string, pass: string) => {
-    if (!supabase) {
-        setAuthStatus({ isLoading: false, message: "Error: Supabase no está configurado.", isError: true });
-        return { error: { message: "Supabase client is not initialized." } as AuthError };
-    }
-    setAuthStatus({ isLoading: true, message: 'Iniciando sesión...', isError: false });
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (!supabase) return { error: { message: "Supabase not configured" } as AuthError };
+    
+    setAuthStatus({ isLoading: true, message: "Iniciando sesión...", isError: false });
+    
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: pass,
+    });
+    
     if (error) {
-      setAuthStatus({ isLoading: false, message: error.message, isError: true });
-    } else {
-      setAuthStatus({ isLoading: false, message: '¡Sesión iniciada!', isError: false });
-      setTimeout(clearAuthStatus, 2000);
+      setAuthStatus({ isLoading: false, message: `Error: ${error.message}`, isError: true });
     }
+    
     return { error };
-  }, [clearAuthStatus]);
+  }, []);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    setAuthStatus({ isLoading: true, message: 'Cerrando sesión...', isError: false });
     await supabase.auth.signOut();
-    setAuthStatus({ isLoading: false, message: null, isError: false });
+    setUser(null);
+    setSession(null);
   }, []);
+
+  const clearAuthStatus = useCallback(() => setAuthStatus({ isLoading: false, message: null, isError: false }), []);
   
   const getMediaEntry = useCallback(async (mediaId: number): Promise<MediaEntryRow | null> => {
       if (!user || !supabase) return null;
-      const { data, error } = await supabase
-        .from('media_entries')
-        .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
-        .eq('user_id', user.id)
-        .eq('media_id', mediaId)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') {
-        console.error("Error al obtener la entrada de media:", error);
-      }
+      const { data, error } = await supabase.from('media_entries').select('*').eq('user_id', user.id).eq('media_id', mediaId).single();
+      if (error && error.code !== 'PGRST116') console.error("Error fetching media entry:", error);
       return data;
   }, [user]);
-  
+
   const upsertMediaEntry = useCallback(async (entry: MediaEntryUpsert): Promise<MediaEntryRow | null> => {
-      if (!user || !supabase) return null;
-      const entryToUpsert: MediaEntryInsert = {
-          user_id: user.id,
-          media_id: entry.media_id,
-          progress: entry.progress,
-          score: entry.score ?? null,
-          status: entry.status,
-          media_type: entry.media_type,
-      };
-      
-      const { data, error } = await supabase
-          .from('media_entries')
-          .upsert(entryToUpsert, { onConflict: 'user_id,media_id' })
-          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
+      if (!user || !supabase) throw new Error("User not authenticated");
+
+      const { data, error } = await supabase.from('media_entries')
+          .upsert({ user_id: user.id, ...entry }, { onConflict: 'user_id, media_id' })
+          .select()
           .single();
 
       if (error) {
-        console.error('Error al actualizar/insertar la entrada de media:', error);
-        return null;
+          console.error("Error upserting media entry:", error);
+          throw error;
       }
       return data;
   }, [user]);
 
-  const getLibraryList = useCallback(async (): Promise<MediaList[]> => {
-      if (!user || !supabase) return [];
-      const { data: entries, error } = await supabase
-          .from('media_entries')
-          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
-          .eq('user_id', user.id)
-          .in('status', ['CURRENT', 'REPEATING', 'PLANNING']);
-      if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia(entries || []);
-  }, [user]);
-  
   const getFullLibraryList = useCallback(async (): Promise<MediaList[]> => {
-    if (!user || !supabase) return [];
-    const { data: entries, error } = await supabase
-        .from('media_entries')
-        .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
-        
-    if (error) { 
-        console.error("Error al obtener la librería completa:", error); 
-        return []; 
-    }
-    return _fetchAndMergeMedia(entries || []);
+      if (!user || !supabase) return [];
+      const { data, error } = await supabase.from('media_entries').select('*').eq('user_id', user.id).order('updated_at', { ascending: false });
+      if (error) { console.error(error); return []; }
+      return _fetchAndMergeMedia(data);
   }, [user]);
 
   const getHistoryList = useCallback(async (): Promise<MediaList[]> => {
-      if (!user || !supabase) return [];
-      const { data: entries, error } = await supabase
-          .from('media_entries')
-          .select('id, user_id, media_id, progress, score, status, media_type, updated_at')
-          .eq('user_id', user.id)
-          .in('status', ['CURRENT', 'REPEATING', 'PAUSED', 'COMPLETED'])
-          .order('updated_at', { ascending: false })
-          .limit(50);
-      if (error) { console.error(error); return []; }
-      return _fetchAndMergeMedia(entries || []);
+    if (!user || !supabase) return [];
+    const { data, error } = await supabase
+        .from('media_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .gt('progress', 0)
+        .order('updated_at', { ascending: false })
+        .limit(30);
+    if (error) { console.error(error); return []; }
+    return _fetchAndMergeMedia(data);
   }, [user]);
 
-  const getScheduledForDateRange = useCallback(async (startDate: string, endDate: string): Promise<ScheduledMediaList[]> => {
+  const getScheduledForDateRange = useCallback(async (startDate: string, endDate: string) => {
     if (!user || !supabase) return [];
-    const { data: entries, error } = await supabase
-        .from('media_schedule')
+    const { data, error } = await supabase.from('scheduled_media')
         .select('*')
         .eq('user_id', user.id)
         .gte('scheduled_date', startDate)
-        .lte('scheduled_date', endDate)
-        .order('scheduled_date', { ascending: true });
+        .lte('scheduled_date', endDate);
     
     if (error) {
         console.error("Error fetching schedule:", error);
         return [];
     }
-    return _fetchAndMergeScheduledMedia(entries || []);
+
+    const mediaIds = data.map(item => item.media_id);
+    if (mediaIds.length === 0) return [];
+
+    const mediaDetails = await getMultipleMediaDetails(mediaIds);
+    const mediaMap = new Map(mediaDetails.map(m => [m.id, m]));
+
+    return data.map(item => ({
+        scheduleId: item.id,
+        media: mediaMap.get(item.media_id)!,
+        scheduledDate: item.scheduled_date
+    })).filter(item => item.media);
   }, [user]);
 
-  const removeMediaFromSchedule = useCallback(async (scheduleId: number): Promise<boolean> => {
-      if (!user || !supabase) return false;
-      const { error } = await supabase
-          .from('media_schedule')
-          .delete()
-          .eq('id', scheduleId)
-          .eq('user_id', user.id);
-      
-      if (error) {
-          console.error("Error removing from schedule:", error);
-          return false;
-      }
-      return true;
+  const removeMediaFromSchedule = useCallback(async (scheduleId: number) => {
+    if (!user || !supabase) return false;
+    const { error } = await supabase.from('scheduled_media').delete().eq('id', scheduleId).eq('user_id', user.id);
+    if (error) {
+        console.error("Error removing from schedule:", error);
+        return false;
+    }
+    return true;
   }, [user]);
 
-  const value = useMemo(() => ({ 
-      user, 
-      session, 
-      signIn, 
-      signOut, 
-      authStatus, 
-      clearAuthStatus, 
-      getMediaEntry, 
-      upsertMediaEntry, 
-      getLibraryList,
-      getFullLibraryList, 
-      getHistoryList,
-      getScheduledForDateRange,
-      removeMediaFromSchedule,
-      isDebugMode,
-      toggleDebugMode,
-      showNsfw,
-      toggleShowNsfw,
-      isSupabaseConfigured,
-      isForceReloading,
-    }), [
-      user, session, signIn, signOut, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, getLibraryList, getFullLibraryList, getHistoryList, getScheduledForDateRange, removeMediaFromSchedule, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw, isSupabaseConfigured, isForceReloading
-  ]);
+  const addMediaToSchedule = useCallback(async (mediaId: number, date: string) => {
+    if (!user || !supabase) return null;
+    const { data, error } = await supabase.from('scheduled_media')
+        .insert({ user_id: user.id, media_id: mediaId, scheduled_date: date })
+        .select()
+        .single();
+    if (error) {
+        console.error("Error adding to schedule:", error);
+        return null;
+    }
+    const media = await getMultipleMediaDetails([mediaId]);
+    return { scheduleId: data.id, scheduledDate: data.scheduled_date, media: media[0] };
+  }, [user]);
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const toggleDebugMode = useCallback(() => {
+    setIsDebugMode(prev => {
+        const newState = !prev;
+        localStorage.setItem('animaid_debug', String(newState));
+        return newState;
+    });
+  }, []);
+
+  const toggleShowNsfw = useCallback(() => {
+      setShowNsfw(prev => {
+        const newState = !prev;
+        localStorage.setItem('animaid_showNsfw', String(newState));
+        return newState;
+      });
+  }, []);
+
+  const value = useMemo(() => ({
+    user,
+    session,
+    signIn,
+    signOut,
+    authStatus,
+    clearAuthStatus,
+    getMediaEntry,
+    upsertMediaEntry,
+    getFullLibraryList,
+    getHistoryList,
+    getScheduledForDateRange,
+    removeMediaFromSchedule,
+    addMediaToSchedule,
+    isDebugMode,
+    toggleDebugMode,
+    showNsfw,
+    toggleShowNsfw,
+    isSupabaseConfigured,
+    isForceReloading
+  }), [user, session, signIn, signOut, authStatus, getMediaEntry, upsertMediaEntry, getFullLibraryList, getHistoryList, getScheduledForDateRange, removeMediaFromSchedule, addMediaToSchedule, isDebugMode, toggleDebugMode, showNsfw, toggleShowNsfw, isSupabaseConfigured, isForceReloading]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };

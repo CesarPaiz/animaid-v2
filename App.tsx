@@ -202,7 +202,7 @@ const App: React.FC = () => {
                 userProgress: {
                     progress: updatedEntry.progress,
                     score: updatedEntry.score ?? 0,
-                    status: updatedEntry.status as MediaListStatus,
+                    status: updatedEntry.status,
                 }
             };
             setCurrentMedia(finalMedia);
@@ -233,7 +233,7 @@ const App: React.FC = () => {
                         media.userProgress = {
                             progress: entry.progress,
                             score: entry.score ?? 0,
-                            status: entry.status as MediaListStatus,
+                            status: entry.status,
                         };
                     }
                     if (active) setCurrentMedia(media);
@@ -304,31 +304,30 @@ const App: React.FC = () => {
 
   const activePage = (MAIN_VIEWS as readonly string[]).includes(page) ? page as MainView : 'home';
   
+  const renderMainView = () => {
+    switch (activePage) {
+        case 'home':
+            return <TrendingView onMediaSelect={handleMediaSelect} isActive={activePage === 'home'} />;
+        case 'search':
+            return <SearchView onMediaSelect={handleMediaSelect} />;
+        case 'library':
+            return user ? <LibraryView onMediaSelect={handleMediaSelect} /> : null;
+        case 'history':
+            return user ? <HistoryView onMediaSelect={handleMediaSelect} /> : null;
+        case 'settings':
+            return <SettingsView />;
+        default:
+            return <TrendingView onMediaSelect={handleMediaSelect} isActive={true} />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200">
       <AuthStatusOverlay status={authStatus} onClose={clearAuthStatus} />
         <div className="md:flex">
           <SideNav activeView={activePage} showLibrary={!!user} />
-          <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-8">
-            <div className={`view-container ${activePage === 'home' ? 'active' : ''}`}>
-              <TrendingView onMediaSelect={handleMediaSelect} isActive={activePage === 'home'} />
-            </div>
-            <div className={`view-container ${activePage === 'search' ? 'active' : ''}`}>
-              <SearchView onMediaSelect={handleMediaSelect} />
-            </div>
-            {user && (
-              <>
-                <div className={`view-container ${activePage === 'library' ? 'active' : ''}`}>
-                  <LibraryView onMediaSelect={handleMediaSelect} />
-                </div>
-                <div className={`view-container ${activePage === 'history' ? 'active' : ''}`}>
-                  <HistoryView onMediaSelect={handleMediaSelect} />
-                </div>
-              </>
-            )}
-            <div className={`view-container ${activePage === 'settings' ? 'active' : ''}`}>
-              <SettingsView />
-            </div>
+          <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-8 animate-fade-in">
+            {renderMainView()}
           </main>
           <BottomNav activeView={activePage} showLibrary={!!user} />
         </div>

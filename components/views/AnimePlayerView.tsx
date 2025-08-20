@@ -34,7 +34,7 @@ const VideoPlayer: React.FC<{ source: VideoSource; title: string; }> = ({ source
             src={source.url}
             className="w-full h-full border-0 bg-black"
             title={title}
-            allowfullscreen=""
+            allowFullScreen
         />
     );
 };

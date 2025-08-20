@@ -5,7 +5,6 @@ type View = 'trending' | 'search' | 'library' | 'history' | 'settings';
 
 interface BottomNavProps {
   activeView: View;
-  setActiveView: (view: View) => void;
   showLibrary: boolean;
 }
 
@@ -13,12 +12,12 @@ interface NavItemProps {
   label: string;
   icon: React.ReactNode;
   isActive: boolean;
-  onClick: () => void;
+  href: string;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, onClick }) => (
-  <button 
-    onClick={onClick} 
+const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
+  <a
+    href={href}
     className="flex-1 flex flex-col items-center justify-center h-full transition-colors duration-300 ease-in-out focus:outline-none group"
   >
     <div className={`relative flex items-center justify-center h-12 w-16 transition-all duration-300 ease-in-out`}>
@@ -30,10 +29,10 @@ const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, onClick }) => 
     <span className={`text-xs font-semibold -mt-2 transition-colors duration-200 ease-in-out ${isActive ? 'text-indigo-400' : 'text-gray-500'}`}>
       {label}
     </span>
-  </button>
+  </a>
 );
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeView, setActiveView, showLibrary }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeView, showLibrary }) => {
   const navItems = [
     { id: 'trending', label: 'Tendencias', icon: <TrendingIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
@@ -53,7 +52,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeView, setActiveView, showLi
             label={item.label}
             icon={item.icon}
             isActive={activeView === item.id}
-            onClick={() => setActiveView(item.id as View)}
+            href={`#/${item.id}`}
           />
         ))}
       </div>

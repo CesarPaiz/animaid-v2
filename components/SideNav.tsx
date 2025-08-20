@@ -5,7 +5,6 @@ type View = 'trending' | 'search' | 'library' | 'history' | 'settings';
 
 interface SideNavProps {
   activeView: View;
-  setActiveView: (view: View) => void;
   showLibrary: boolean;
 }
 
@@ -13,14 +12,14 @@ interface NavItemProps {
   label: string;
   icon: React.ReactNode;
   isActive: boolean;
-  onClick: () => void;
+  href: string;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, onClick }) => (
-  <button 
-    onClick={onClick} 
-    className="w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-colors duration-200 ease-in-out focus:outline-none group"
-    style={{ justifyContent: 'initial' }} // Reemplaza text-left para flex
+const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
+  <a
+    href={href}
+    className="w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-colors duration-200 ease-in-out focus:outline-none group relative"
+    style={{ justifyContent: 'initial' }}
   >
     <div className={`w-6 h-6 flex-shrink-0 transition-colors duration-200 ease-in-out ${isActive ? 'text-indigo-400' : 'text-gray-400 group-hover:text-gray-200'}`}>
         {icon}
@@ -29,11 +28,11 @@ const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, onClick }) => 
       {label}
     </span>
     {isActive && <div className="absolute left-0 h-6 w-1 bg-indigo-500 rounded-r-full lg:hidden"></div>}
-  </button>
+  </a>
 );
 
 
-const SideNav: React.FC<SideNavProps> = ({ activeView, setActiveView, showLibrary }) => {
+const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary }) => {
   const navItems = [
     { id: 'trending', label: 'Tendencias', icon: <TrendingIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
@@ -62,7 +61,7 @@ const SideNav: React.FC<SideNavProps> = ({ activeView, setActiveView, showLibrar
                     label={item.label}
                     icon={item.icon}
                     isActive={activeView === item.id}
-                    onClick={() => setActiveView(item.id as View)}
+                    href={`#/${item.id}`}
                 />
             ))}
         </div>

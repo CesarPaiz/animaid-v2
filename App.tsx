@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import BottomNav from './components/BottomNav';
 import SideNav from './components/SideNav';
 import TrendingView from './components/views/TrendingView';
@@ -10,12 +10,12 @@ import AnimePlayerView from './components/views/AnimePlayerView';
 import MangaReaderView from './components/views/MangaReaderView';
 import HistoryView from './components/views/HistoryView';
 import { useAuth } from './context/AuthContext';
-import { Media, MediaFormat } from './types';
+import { Media, MediaFormat, MediaListStatus } from './types';
 import Spinner from './components/Spinner';
 import { CloseIcon } from './components/icons';
+import { getMediaDetails } from './services/anilistService';
 
-type View = 'trending' | 'search' | 'library' | 'history' | 'settings';
-type PlaybackState = { media: Media; unit: number } | null;
+type View = 'trending' | 'search' | 'library' | 'history' | 'settings' | 'media' | 'play';
 
 const AuthStatusOverlay: React.FC<{ status: any; onClose: () => void; }> = ({ status, onClose }) => {
   if (!status.message) {
@@ -118,54 +118,142 @@ const LoginView: React.FC = () => {
     );
 };
 
+function useRoute() {
+    const [hash, setHash] = useState(() => window.location.hash);
+
+    useEffect(() => {
+        const handler = () => setHash(window.location.hash);
+        window.addEventListener('hashchange', handler);
+        if (window.location.hash === '' || window.location.hash === '#') {
+            window.location.hash = '#/trending';
+        }
+        return () => window.removeEventListener('hashchange', handler);
+    }, []);
+    
+    const path = (hash.replace(/^#\/?/, '') || 'trending').split('/');
+    const [page, ...params] = path;
+    
+    return { page: page as View, params };
+}
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<View>('trending');
-  const [selectedMedia, setSelectedMedia] = useState<Media | null>(null);
-  const [activePlayback, setActivePlayback] = useState<PlaybackState>(null);
-  const { user, authStatus, clearAuthStatus } = useAuth();
+  const { user, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry } = useAuth();
+  const { page, params } = useRoute();
+  const [currentMedia, setCurrentMedia] = useState<Media | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleMediaSelect = useCallback((media: Media) => {
-    setSelectedMedia(media);
+    window.location.hash = `#/media/${media.id}`;
   }, []);
 
-  const handleCloseDetail = useCallback(() => {
-    setSelectedMedia(null);
+  const handleClose = useCallback(() => {
+    window.history.back();
   }, []);
   
   const handleStartPlayback = useCallback((media: Media, unit: number) => {
-    setActivePlayback({ media, unit });
-    setSelectedMedia(media); // Ensure detail view is aware of the current media
-  }, []);
-
-  const handleClosePlayback = useCallback(() => {
-    setActivePlayback(null);
+    const isManga = media.format === MediaFormat.MANGA || media.format === MediaFormat.NOVEL || media.format === MediaFormat.ONE_SHOT;
+    window.location.hash = `#/play/${isManga ? 'manga' : 'anime'}/${media.id}/${unit}`;
   }, []);
 
   const handleProgressUpdate = useCallback((updatedMedia: Media) => {
-    setSelectedMedia(prev => prev ? updatedMedia : null);
-    setActivePlayback(prev => {
-        if (!prev) return null;
-        return { ...prev, media: updatedMedia };
-    });
+    setCurrentMedia(updatedMedia);
   }, []);
 
   const handleUnitChange = useCallback((newUnit: number) => {
-    setActivePlayback(prev => {
-        if (!prev) return prev;
-        
-        const isManga = prev.media.format === MediaFormat.MANGA || prev.media.format === MediaFormat.NOVEL || prev.media.format === MediaFormat.ONE_SHOT;
-        const totalUnits = isManga ? prev.media.chapters : prev.media.episodes;
+    if (page === 'play' && params.length >= 2 && currentMedia) {
+        const [type, id] = params;
+        const isManga = type === 'manga';
+        const totalUnits = isManga ? currentMedia.chapters : currentMedia.episodes;
 
-        if (!totalUnits || newUnit < 1 || newUnit > totalUnits) {
-             return prev;
+        if (newUnit >= 1 && (!totalUnits || newUnit <= totalUnits)) {
+             window.location.hash = `#/play/${type}/${id}/${newUnit}`;
         }
-        return { ...prev, unit: newUnit };
-    });
-  }, []);
+    }
+  }, [page, params, currentMedia]);
 
-  const renderView = () => {
-    switch (activeView) {
+   const handleStatusUpdate = useCallback(async (newStatus: MediaListStatus) => {
+    if (!user || !currentMedia) return;
+
+    const previousUserProgress = currentMedia.userProgress;
+    const isManga = currentMedia.format === MediaFormat.MANGA || currentMedia.format === MediaFormat.NOVEL || currentMedia.format === MediaFormat.ONE_SHOT;
+
+    const optimisticMedia: Media = {
+        ...currentMedia,
+        userProgress: {
+            progress: currentMedia.userProgress?.progress || 0,
+            score: currentMedia.userProgress?.score || 0,
+            status: newStatus,
+        }
+    };
+    setCurrentMedia(optimisticMedia);
+
+    try {
+        const updatedEntry = await upsertMediaEntry({
+            media_id: currentMedia.id,
+            progress: previousUserProgress?.progress || 0,
+            status: newStatus,
+            media_type: isManga ? 'MANGA' : 'ANIME'
+        });
+        
+        if (updatedEntry) {
+             const finalMedia: Media = {
+                ...currentMedia,
+                userProgress: {
+                    progress: updatedEntry.progress,
+                    score: updatedEntry.score ?? 0,
+                    status: updatedEntry.status as MediaListStatus,
+                }
+            };
+            setCurrentMedia(finalMedia);
+        } else {
+            setCurrentMedia(prev => prev ? { ...prev, userProgress: previousUserProgress } : null);
+        }
+    } catch (error) {
+        console.error("Failed to update status, reverting.", error);
+        setCurrentMedia(prev => prev ? { ...prev, userProgress: previousUserProgress } : null);
+    }
+  }, [user, currentMedia, upsertMediaEntry]);
+
+  useEffect(() => {
+    let active = true;
+    const loadMedia = async () => {
+        const mediaIdStr = page === 'media' ? params[0] : (page === 'play' ? params[1] : null);
+        if (mediaIdStr) {
+            const mediaId = parseInt(mediaIdStr, 10);
+            if (!isNaN(mediaId)) {
+                if (currentMedia?.id === mediaId) return;
+
+                setIsLoading(true);
+                setCurrentMedia(null);
+                try {
+                    const media = await getMediaDetails(mediaId);
+                    const entry = await getMediaEntry(mediaId);
+                    if (entry) {
+                        media.userProgress = {
+                            progress: entry.progress,
+                            score: entry.score ?? 0,
+                            status: entry.status as MediaListStatus,
+                        };
+                    }
+                    if (active) setCurrentMedia(media);
+                } catch(e) {
+                    console.error("Failed to load media", e);
+                    if (active) window.location.hash = '#/trending';
+                } finally {
+                    if (active) setIsLoading(false);
+                }
+            }
+        } else {
+            setCurrentMedia(null);
+        }
+    };
+    
+    loadMedia();
+    return () => { active = false; };
+  }, [page, params.join(','), getMediaEntry, currentMedia?.id]);
+  
+  const renderMainView = (page: View) => {
+    switch (page) {
       case 'trending':
         return <TrendingView onMediaSelect={handleMediaSelect} />;
       case 'search':
@@ -189,34 +277,48 @@ const App: React.FC = () => {
     );
   }
 
-  if (activePlayback) {
-    const isManga = activePlayback.media.format === MediaFormat.MANGA || activePlayback.media.format === MediaFormat.NOVEL || activePlayback.media.format === MediaFormat.ONE_SHOT;
-    if (isManga) {
-      return <MangaReaderView media={activePlayback.media} chapterNumber={activePlayback.unit} onClose={handleClosePlayback} onProgressUpdate={handleProgressUpdate} onChapterChange={handleUnitChange} />;
-    }
-    return <AnimePlayerView media={activePlayback.media} episodeNumber={activePlayback.unit} onClose={handleClosePlayback} onProgressUpdate={handleProgressUpdate} onEpisodeChange={handleUnitChange} />;
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-gray-200">
+        <AuthStatusOverlay status={authStatus} onClose={clearAuthStatus} />
+        <LoginView />
+      </div>
+    );
   }
 
+  if (isLoading) {
+      return (
+          <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+              <Spinner />
+          </div>
+      );
+  }
+
+  if (page === 'media' && currentMedia) {
+      return <MediaDetailView media={currentMedia} onClose={handleClose} onStartPlayback={handleStartPlayback} onStatusChange={handleStatusUpdate} />
+  }
+
+  if (page === 'play' && params.length >= 3 && currentMedia) {
+    const type = params[0];
+    const unit = parseInt(params[2], 10);
+    const isManga = type === 'manga';
+
+    if (isManga) {
+      return <MangaReaderView media={currentMedia} chapterNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onChapterChange={handleUnitChange} />;
+    }
+    return <AnimePlayerView media={currentMedia} episodeNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onEpisodeChange={handleUnitChange} />;
+  }
+  
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200">
       <AuthStatusOverlay status={authStatus} onClose={clearAuthStatus} />
-      {!user ? (
-        <LoginView />
-      ) : selectedMedia ? (
-        <MediaDetailView 
-            media={selectedMedia} 
-            onClose={handleCloseDetail} 
-            onStartPlayback={handleStartPlayback}
-        />
-      ) : (
         <div className="md:flex">
-          <SideNav activeView={activeView} setActiveView={setActiveView} showLibrary={!!user} />
+          <SideNav activeView={page} showLibrary={!!user} />
           <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-8">
-            {renderView()}
+            {renderMainView(page)}
           </main>
-          <BottomNav activeView={activeView} setActiveView={setActiveView} showLibrary={!!user} />
+          <BottomNav activeView={page} showLibrary={!!user} />
         </div>
-      )}
     </div>
   );
 };

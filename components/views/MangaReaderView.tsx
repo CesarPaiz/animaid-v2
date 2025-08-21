@@ -22,6 +22,7 @@ interface MangaReaderViewProps {
   onClose: () => void;
   onProgressUpdate: (updatedMedia: Media) => void;
   onChapterChange: (newChapter: number) => void;
+  showToast: (message: string, type?: 'success' | 'error') => void;
 }
 
 const SearchResultSelectorModal: React.FC<{
@@ -72,7 +73,7 @@ const SearchResultSelectorModal: React.FC<{
                         </button>
                     </form>
                 </div>
-                <div className="p-4 overflow-y-auto flex-grow space-y-2">
+                <div className="p-4 overflow-y-auto flex-grow space-y-2 overscroll-y-contain">
                     {results.length > 0 ? results.map((result) => {
                         const isSelected = currentSelection?.url === result.url;
                         return (
@@ -91,7 +92,7 @@ const SearchResultSelectorModal: React.FC<{
 };
 
 
-const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber, onClose, onProgressUpdate, onChapterChange }) => {
+const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber, onClose, onProgressUpdate, onChapterChange, showToast }) => {
   const { user, upsertMediaEntry, isDebugMode } = useAuth();
   const [providerStatus, setProviderStatus] = useState<Map<string, ProviderStatus>>(new Map());
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
@@ -133,10 +134,14 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
                 progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status
             }};
             onProgressUpdate(updatedMedia);
+            showToast('Progreso guardado');
         }
-    } catch (err) { console.error("Fallo al sincronizar progreso de manga:", err); } 
+    } catch (err) { 
+        console.error("Fallo al sincronizar progreso de manga:", err); 
+        showToast('Error al guardar progreso', 'error');
+    } 
     finally { setIsSyncing(false); }
-  }, [user, media, upsertMediaEntry, onProgressUpdate]);
+  }, [user, media, upsertMediaEntry, onProgressUpdate, showToast]);
   
   const handleNextChapter = async () => {
     await markChapterAsRead(chapterNumber);
@@ -229,7 +234,7 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
            </div>
         </header>
 
-        <main ref={scrollContainerRef} className="flex-grow w-full overflow-y-auto bg-black" onClick={() => activeProvider && setShowControls(c => !c)}>
+        <main ref={scrollContainerRef} className="flex-grow w-full overflow-y-auto bg-black overscroll-y-contain" onClick={() => activeProvider && setShowControls(c => !c)}>
             {!activeProvider ? (
                 <div className="flex items-center justify-center min-h-full p-4">
                     <div className="relative bg-gray-900/80 backdrop-blur-lg rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-fade-in">
@@ -280,7 +285,11 @@ const MangaReaderView: React.FC<MangaReaderViewProps> = ({ media, chapterNumber,
                 <button onClick={() => onChapterChange(chapterNumber - 1)} disabled={chapterNumber <= 1} className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
                     <ChevronLeftIcon className="w-5 h-5" /><span>Anterior</span>
                 </button>
-                 {isSyncing && <p className="text-xs text-indigo-400 animate-pulse font-semibold">Guardando...</p>}
+                 {isSyncing && (
+                    <div className="text-xs text-indigo-400 font-semibold flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-indigo-400/50 border-t-indigo-400 rounded-full animate-spin"></div>
+                    </div>
+                 )}
                 <button onClick={handleNextChapter} disabled={totalChapters > 0 && chapterNumber >= totalChapters} className="flex items-center gap-2 bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
                     <span>Siguiente</span><ChevronRightIcon className="w-5 h-5" />
                 </button>

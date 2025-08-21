@@ -155,6 +155,21 @@ export const getPopularManga = async (): Promise<Media[]> => {
     return processMediaPage(data).media;
   };
 
+export const getTopRatedAnime = async (): Promise<Media[]> => {
+  const query = `
+    query ($page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        media(type: ANIME, sort: SCORE_DESC) {
+          ...media
+        }
+      }
+    }
+    ${mediaFragment}
+  `;
+  const data = await fetchFromGraphQL(query, { page: 1, perPage: 20 });
+  return processMediaPage(data).media;
+};
+
 
 interface SearchFilters {
     query: string;

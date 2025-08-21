@@ -94,11 +94,12 @@ export const getAnimeEpisodeSourcesFromProvider = async (
     let selectedResult: SearchResult | undefined;
     
     try {
+        const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+
         if (preSelectedResult) {
             selectedResult = preSelectedResult;
             log.push({ step: `Paso 1: Usando resultado pre-seleccionado`, extracted: selectedResult.url });
         } else {
-            const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
             const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
             log.push({ step: `Paso 1: Buscar anime con filtro`, url: searchUrl, extracted: `Buscando: "${titleToSearch}"` });
             const searchData = await fetchWithTimeout(searchUrl);
@@ -114,19 +115,26 @@ export const getAnimeEpisodeSourcesFromProvider = async (
             log[log.length-1].extracted = `Ruta de info encontrada: ${selectedResult!.url}`;
         }
         
+        // If we have a selected result but no search list yet (from a pre-selected run), get the search list now.
+        // This ensures that if the next step fails, we have a list of alternatives to show the user.
+        if (selectedResult && !searchResults) {
+            const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+            log.push({ step: `Paso 1.1: Obteniendo lista de búsqueda para fallback`, url: searchUrl });
+            try {
+                const searchData = await fetchWithTimeout(searchUrl);
+                searchResults = searchData.results || [];
+                log[log.length-1].extracted = `Encontrados ${searchResults.length} resultados de fallback.`;
+            } catch (e) {
+                log[log.length-1].error = `Fallo al obtener resultados de fallback: ${(e as Error).message}`;
+                // Don't throw, we can still try the pre-selected result.
+            }
+        }
+        
         const animeInfoPath = selectedResult!.url;
         const infoUrl = safeJoinUrl(CONSUMET_API_URL, animeInfoPath);
         log.push({ step: 'Paso 2: Obtener información del anime', url: infoUrl });
         const animeInfo = await fetchWithTimeout(infoUrl);
         log[log.length-1].response = animeInfo;
-        
-        // Populate searchResults even on subsequent successful fetches
-        if (!searchResults && animeInfo.title) {
-             const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
-             const searchUrl = `${CONSUMET_API_URL}/anime/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
-             const searchData = await fetchWithTimeout(searchUrl);
-             searchResults = searchData.results || [];
-        }
         
         if (!animeInfo.episodes || animeInfo.episodes.length === 0) throw new Error('No se encontraron episodios para este anime.');
         
@@ -173,11 +181,12 @@ export const getMangaChapterPagesFromProvider = async (
     let selectedResult: SearchResult | undefined;
 
     try {
+        const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
+
         if (preSelectedResult) {
             selectedResult = preSelectedResult;
             log.push({ step: `Paso 1: Usando resultado pre-seleccionado`, extracted: selectedResult.url });
         } else {
-            const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
             const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
             log.push({ step: `Paso 1: Buscar manga con filtro`, url: searchUrl, extracted: `Buscando: "${titleToSearch}"` });
             const searchData = await fetchWithTimeout(searchUrl);
@@ -193,17 +202,25 @@ export const getMangaChapterPagesFromProvider = async (
             log[log.length-1].extracted = `Ruta de info encontrada: ${selectedResult!.url}`;
         }
         
+        // If we have a selected result but no search list yet (from a pre-selected run), get the search list now.
+        // This ensures that if the next step fails, we have a list of alternatives to show the user.
+        if (selectedResult && !searchResults) {
+            const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
+            log.push({ step: `Paso 1.1: Obteniendo lista de búsqueda para fallback`, url: searchUrl });
+            try {
+                const searchData = await fetchWithTimeout(searchUrl);
+                searchResults = searchData.results || [];
+                log[log.length-1].extracted = `Encontrados ${searchResults.length} resultados de fallback.`;
+            } catch (e) {
+                log[log.length-1].error = `Fallo al obtener resultados de fallback: ${(e as Error).message}`;
+                // Don't throw, we can still try the pre-selected result.
+            }
+        }
+        
         const infoUrl = safeJoinUrl(CONSUMET_API_URL, selectedResult!.url);
         log.push({ step: `Paso 2: Obtener información del manga`, url: infoUrl });
         const mangaInfo = await fetchWithTimeout(infoUrl);
         log[log.length - 1].response = mangaInfo;
-
-        if (!searchResults && mangaInfo.title) {
-             const titleToSearch = customSearchQuery || sanitizeTitleForProvider(media.title.english || media.title.romaji);
-             const searchUrl = `${CONSUMET_API_URL}/manga/${provider}/filter?title=${encodeURIComponent(titleToSearch)}`;
-             const searchData = await fetchWithTimeout(searchUrl);
-             searchResults = searchData.results || [];
-        }
         
         if (!mangaInfo.chapters || mangaInfo.chapters.length === 0) throw new Error('No se encontraron capítulos.');
         

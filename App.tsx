@@ -14,9 +14,44 @@ import { Media, MediaFormat, MediaListStatus, View, MainView } from './types';
 import Spinner from './components/Spinner';
 import { CloseIcon } from './components/icons';
 import { getMediaDetails } from './services/anilistService';
+import Toast, { ToastType } from './components/Toast';
 
 const MAIN_VIEWS: MainView[] = ['home', 'search', 'library', 'history', 'settings'];
 
+// --- Navigation ---
+const navigate = (path: string) => {
+  window.history.pushState({}, '', path);
+  const navEvent = new Event('navigate');
+  window.dispatchEvent(navEvent);
+};
+
+function useRoute() {
+    const [pathname, setPathname] = useState(window.location.pathname);
+
+    useEffect(() => {
+        const onLocationChange = () => {
+            setPathname(window.location.pathname);
+        };
+
+        window.addEventListener('popstate', onLocationChange);
+        window.addEventListener('navigate', onLocationChange);
+
+        if (window.location.pathname === '/' || window.location.pathname === '') {
+            window.history.replaceState({}, '', '/home');
+            onLocationChange();
+        }
+
+        return () => {
+            window.removeEventListener('popstate', onLocationChange);
+            window.removeEventListener('navigate', onLocationChange);
+        };
+    }, []);
+    
+    const path = (pathname.replace(/^\//, '') || 'home').split('/');
+    const [page, ...params] = path;
+    
+    return { page: page as View, params };
+}
 
 const AuthStatusOverlay: React.FC<{ status: any; onClose: () => void; }> = ({ status, onClose }) => {
   if (!status.message) {
@@ -119,41 +154,33 @@ const LoginView: React.FC = () => {
     );
 };
 
-function useRoute() {
-    const [hash, setHash] = useState(() => window.location.hash);
-
-    useEffect(() => {
-        const handler = () => setHash(window.location.hash);
-        window.addEventListener('hashchange', handler);
-        if (window.location.hash === '' || window.location.hash === '#') {
-            window.location.hash = '#/home';
-        }
-        return () => window.removeEventListener('hashchange', handler);
-    }, []);
-    
-    const path = (hash.replace(/^#\/?/, '') || 'home').split('/');
-    const [page, ...params] = path;
-    
-    return { page: page as View, params };
-}
-
 const App: React.FC = () => {
   const { user, authStatus, clearAuthStatus, getMediaEntry, upsertMediaEntry, isForceReloading } = useAuth();
   const { page, params } = useRoute();
   const [currentMedia, setCurrentMedia] = useState<Media | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: ToastType; key: number } | null>(null);
+
+  const showToast = useCallback((message: string, type: ToastType = 'success') => {
+    setToast({ message, type, key: Date.now() });
+  }, []);
 
   const handleMediaSelect = useCallback((media: Media) => {
-    window.location.hash = `#/media/${media.id}`;
+    navigate(`/media/${media.id}`);
   }, []);
 
   const handleClose = useCallback(() => {
-    window.history.back();
+    // A more robust way to handle "back" in a SPA with history API
+    if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        navigate('/home');
+    }
   }, []);
   
   const handleStartPlayback = useCallback((media: Media, unit: number) => {
     const isManga = media.format === MediaFormat.MANGA || media.format === MediaFormat.NOVEL || media.format === MediaFormat.ONE_SHOT;
-    window.location.hash = `#/play/${isManga ? 'manga' : 'anime'}/${media.id}/${unit}`;
+    navigate(`/play/${isManga ? 'manga' : 'anime'}/${media.id}/${unit}`);
   }, []);
 
   const handleProgressUpdate = useCallback((updatedMedia: Media) => {
@@ -167,7 +194,7 @@ const App: React.FC = () => {
         const totalUnits = isManga ? currentMedia.chapters : currentMedia.episodes;
 
         if (newUnit >= 1 && (!totalUnits || newUnit <= totalUnits)) {
-             window.location.hash = `#/play/${type}/${id}/${newUnit}`;
+             navigate(`/play/${type}/${id}/${newUnit}`);
         }
     }
   }, [page, params, currentMedia]);
@@ -206,14 +233,17 @@ const App: React.FC = () => {
                 }
             };
             setCurrentMedia(finalMedia);
+            showToast(`Actualizado a "${newStatus.toLocaleLowerCase()}"`);
         } else {
             setCurrentMedia(prev => prev ? { ...prev, userProgress: previousUserProgress } : null);
+            showToast('Error al actualizar', 'error');
         }
     } catch (error) {
         console.error("Failed to update status, reverting.", error);
         setCurrentMedia(prev => prev ? { ...prev, userProgress: previousUserProgress } : null);
+        showToast('Error al actualizar', 'error');
     }
-  }, [user, currentMedia, upsertMediaEntry]);
+  }, [user, currentMedia, upsertMediaEntry, showToast]);
 
   useEffect(() => {
     let active = true;
@@ -222,7 +252,7 @@ const App: React.FC = () => {
         if (mediaIdStr) {
             const mediaId = parseInt(mediaIdStr, 10);
             if (!isNaN(mediaId)) {
-                if (currentMedia?.id === mediaId) return;
+                if (currentMedia?.id === mediaId && page !== 'play') return;
 
                 setIsLoading(true);
                 setCurrentMedia(null);
@@ -239,7 +269,7 @@ const App: React.FC = () => {
                     if (active) setCurrentMedia(media);
                 } catch(e) {
                     console.error("Failed to load media", e);
-                    if (active) window.location.hash = '#/home';
+                    if (active) navigate('/home');
                 } finally {
                     if (active) setIsLoading(false);
                 }
@@ -251,7 +281,7 @@ const App: React.FC = () => {
     
     loadMedia();
     return () => { active = false; };
-  }, [page, params.join(','), getMediaEntry, currentMedia?.id]);
+  }, [page, params.join(','), getMediaEntry]);
   
   if (isForceReloading) {
     return (
@@ -297,9 +327,9 @@ const App: React.FC = () => {
     const isManga = type === 'manga';
 
     if (isManga) {
-      return <MangaReaderView media={currentMedia} chapterNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onChapterChange={handleUnitChange} />;
+      return <MangaReaderView media={currentMedia} chapterNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onChapterChange={handleUnitChange} showToast={showToast} />;
     }
-    return <AnimePlayerView media={currentMedia} episodeNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onEpisodeChange={handleUnitChange} />;
+    return <AnimePlayerView media={currentMedia} episodeNumber={unit} onClose={handleClose} onProgressUpdate={handleProgressUpdate} onEpisodeChange={handleUnitChange} showToast={showToast} />;
   }
 
   const activePage = (MAIN_VIEWS as readonly string[]).includes(page) ? page as MainView : 'home';
@@ -324,12 +354,13 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200">
       <AuthStatusOverlay status={authStatus} onClose={clearAuthStatus} />
-        <div className="md:flex">
-          <SideNav activeView={activePage} showLibrary={!!user} />
-          <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-8 animate-fade-in">
+      {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        <div className="md:flex md:h-screen md:overflow-hidden">
+          <SideNav activeView={activePage} showLibrary={!!user} navigate={navigate} />
+          <main className="md:flex-grow md:ml-20 lg:ml-64 pb-24 md:pb-0 md:overflow-y-auto md:overscroll-y-contain animate-fade-in smooth-scroll">
             {renderMainView()}
           </main>
-          <BottomNav activeView={activePage} showLibrary={!!user} />
+          <BottomNav activeView={activePage} showLibrary={!!user} navigate={navigate} />
         </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { MainView } from '../types';
 interface SideNavProps {
   activeView: MainView;
   showLibrary: boolean;
+  navigate: (path: string) => void;
 }
 
 interface NavItemProps {
@@ -12,11 +13,13 @@ interface NavItemProps {
   icon: React.ReactNode;
   isActive: boolean;
   href: string;
+  onClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
+const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href, onClick }) => (
   <a
     href={href}
+    onClick={onClick}
     className="w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-colors duration-200 ease-in-out focus:outline-none group relative"
     style={{ justifyContent: 'initial' }}
   >
@@ -31,7 +34,7 @@ const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
 );
 
 
-const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary }) => {
+const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary, navigate }) => {
   const navItems = [
     { id: 'home', label: 'Home', icon: <HomeIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
@@ -41,6 +44,11 @@ const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary }) => {
     ] : []),
     { id: 'settings', label: 'Ajustes', icon: <SettingsIcon /> },
   ];
+  
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+      e.preventDefault();
+      navigate(path);
+  }
 
   return (
     <nav className="hidden md:block md:w-20 lg:w-64 md:flex-shrink-0 fixed top-0 left-0 h-full bg-gray-950 border-r border-gray-800/80 z-50">
@@ -60,7 +68,8 @@ const SideNav: React.FC<SideNavProps> = ({ activeView, showLibrary }) => {
                     label={item.label}
                     icon={item.icon}
                     isActive={activeView === item.id}
-                    href={`#/${item.id}`}
+                    href={`/${item.id}`}
+                    onClick={(e) => handleNavClick(e, `/${item.id}`)}
                 />
             ))}
         </div>

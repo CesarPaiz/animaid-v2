@@ -27,18 +27,25 @@ interface HistoryListItemProps {
 }
 
 const HistoryListItem: React.FC<HistoryListItemProps> = ({ item, onClick }) => (
-    <button onClick={onClick} className="flex w-full items-center bg-gray-900 p-3 rounded-xl shadow-md mb-3 text-left transition-all duration-200 hover:bg-gray-800/60 hover:scale-[1.02]">
+    <button onClick={onClick} className="group w-full bg-gray-900 rounded-xl shadow-md text-left transition-all duration-300 hover:bg-gray-800/60 hover:!scale-[1.02] overflow-hidden flex flex-row lg:flex-col active:scale-95">
         <img 
-            src={item.media.coverImage.large || item.media.coverImage.extraLarge}
+            src={item.media.coverImage.extraLarge}
             alt={item.media.title.romaji}
-            className="w-16 h-24 object-cover rounded-lg flex-shrink-0 shadow-lg"
+            className="w-24 h-36 lg:w-full lg:h-auto object-cover flex-shrink-0 lg:aspect-[2/3] transition-transform lg:group-hover:scale-105"
         />
-        <div className="ml-4 flex-1 overflow-hidden">
-            <h3 className="font-bold text-white leading-tight truncate">{item.media.title.english || item.media.title.romaji}</h3>
-            <p className="text-sm text-gray-400 mt-1">
-                Visto cap./ep. {item.progress}
-            </p>
-            {item.updatedAt && <p className="text-xs text-gray-500 mt-2 font-medium">{timeAgo(item.updatedAt)}</p>}
+        <div className="p-3 lg:p-4 flex flex-col justify-between flex-1">
+            <div>
+                <h3 className="font-bold text-white leading-tight truncate">{item.media.title.english || item.media.title.romaji}</h3>
+                <p className="text-sm text-gray-400 mt-1 capitalize">
+                    {item.media.format?.replace(/_/g, ' ').toLowerCase()}
+                </p>
+            </div>
+            <div className="mt-2 lg:mt-4">
+                 <p className="text-sm text-gray-300 font-semibold">
+                    Visto cap./ep. {item.progress}
+                </p>
+                {item.updatedAt && <p className="text-xs text-gray-500 mt-1 font-medium">{timeAgo(item.updatedAt)}</p>}
+            </div>
         </div>
     </button>
 );
@@ -90,9 +97,11 @@ const HistoryView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMe
                 <p className="text-gray-400 mt-1">Tu actividad más reciente.</p>
             </header>
             <div className="px-4 md:px-0">
-                <div className="max-w-4xl mx-auto">
+                <div className="max-w-7xl mx-auto">
                     {userHistory.length > 0 ? (
-                        userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)
+                        <div className="flex flex-col gap-3 md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
+                            {userHistory.map(item => <HistoryListItem key={`${item.media.id}-${item.media.format}`} item={item} onClick={() => onMediaSelect(item.media)} />)}
+                        </div>
                     ) : (
                         renderEmptyState()
                     )}

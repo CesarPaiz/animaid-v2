@@ -48,11 +48,14 @@ const StatusSelector: React.FC<{
     const toggleOpen = () => {
         if (!isOpen && wrapperRef.current) {
             const rect = wrapperRef.current.getBoundingClientRect();
-            // Allow 280px for the dropdown height + margin
-            if (rect.top < 280) {
-                setPosition('bottom');
-            } else {
+            const spaceAbove = rect.top;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const dropdownHeight = 280; // Estimated height of the dropdown
+            
+            if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
                 setPosition('top');
+            } else {
+                setPosition('bottom');
             }
         }
         setIsOpen(!isOpen);
@@ -62,7 +65,7 @@ const StatusSelector: React.FC<{
         <div ref={wrapperRef} className="relative h-12">
             <button
                 onClick={toggleOpen}
-                className="h-full flex items-center justify-between bg-gray-700/80 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="h-full flex items-center justify-between bg-gray-700/80 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
             >
                 <span className="truncate">{currentOption?.label || 'Estado'}</span>
                 <ChevronUpDownIcon className="w-5 h-5 text-gray-400 flex-shrink-0 ml-1" />
@@ -262,6 +265,7 @@ const MediaDetailView: React.FC<MediaDetailViewProps> = ({ media, onClose, onSta
                         return (
                             <button 
                                 key={unit} 
+                                title={`${unitLabel} ${unit}`}
                                 onClick={() => onStartPlayback(media, unit)}
                                 className={`aspect-square rounded-lg font-bold text-sm flex items-center justify-center transition-all duration-200 border-2
                                 ${isNext ? 'bg-indigo-600 border-indigo-500 text-white animate-pulse' : ''}

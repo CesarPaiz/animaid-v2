@@ -55,7 +55,7 @@ const FilterPanel: React.FC<{
                     {renderSelect("Ordenar por", filters.sort, e => setFilters(f => ({...f, sort: e.target.value as MediaSort})), Object.entries(MediaSort).map(([key, val]) => ({ value: val, label: key.replace(/_/g, ' ')})))}
                     <div>
                         <h3 className="text-sm font-medium text-gray-300 mb-2">Géneros</h3>
-                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto bg-gray-800/50 p-3 rounded-lg">
+                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto bg-gray-800/50 p-3 rounded-lg overscroll-y-contain">
                             {allGenres.map(genre => (
                                 <button key={genre.name} onClick={() => handleGenreToggle(genre.name)} className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${filters.genres.includes(genre.name) ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
                                     {genre.name}
@@ -199,8 +199,8 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
     };
 
     return (
-        <div className="pt-8">
-            <header className="px-4 md:px-6 lg:px-8 mb-6">
+        <div className="pt-8 md:pt-0">
+            <header className="px-4 md:px-6 lg:px-8 mb-6 md:pt-8">
                 <h1 className="text-4xl font-black tracking-tighter text-white"><span className="animated-gradient">Animaid</span></h1>
                 <p className="text-gray-400 mt-1">Busca tu próximo anime o manga favorito.</p>
                 <form onSubmit={handleSearchSubmit} className="flex gap-2 items-center mt-4">
@@ -229,7 +229,7 @@ const SearchView: React.FC<{ onMediaSelect: (media: Media) => void }> = ({ onMed
             
             <FilterPanel isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} filters={filters} setFilters={setFilters} allGenres={allGenres} onApply={() => performSearch(1, true)}/>
 
-            <div className="px-4 md:px-6 lg:px-8 pb-4">
+            <div className="px-4 md:px-6 lg:px-8 pb-8">
                 {isLoading && results.length === 0 ? <Spinner /> : null}
                 {!isLoading && results.length === 0 && (
                     <div className="text-center py-16">

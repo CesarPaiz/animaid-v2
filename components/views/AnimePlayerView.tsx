@@ -22,6 +22,7 @@ interface AnimePlayerViewProps {
   onClose: () => void;
   onProgressUpdate: (updatedMedia: Media) => void;
   onEpisodeChange: (newEpisode: number) => void;
+  showToast: (message: string, type?: 'success' | 'error') => void;
 }
 
 const VideoPlayer: React.FC<{ source: VideoSource; title: string; }> = ({ source, title }) => {
@@ -88,7 +89,7 @@ const SearchResultSelectorModal: React.FC<{
                         </button>
                     </form>
                 </div>
-                <div className="p-4 overflow-y-auto flex-grow space-y-2">
+                <div className="p-4 overflow-y-auto flex-grow space-y-2 overscroll-y-contain">
                     {results.length > 0 ? results.map((result) => {
                         const isSelected = currentSelection?.url === result.url;
                         return (
@@ -158,13 +159,13 @@ const SourceSelectorModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/70 z-[120] flex flex-col justify-end backdrop-blur-sm animate-fade-in" onClick={onClose}>
+        <div className="fixed inset-0 bg-black/70 z-[120] flex flex-col justify-end md:items-center md:justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div 
-                className="bg-gray-900/95 border-t border-gray-700/80 rounded-t-2xl shadow-2xl max-h-[60vh] flex flex-col animate-slide-up"
+                className="bg-gray-900/95 border-t md:border border-gray-700/80 rounded-t-2xl md:rounded-xl shadow-2xl max-h-[60vh] md:max-h-[80vh] w-full md:max-w-md flex flex-col animate-slide-up md:animate-fade-in"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="p-4 flex-shrink-0">
-                    <div className="w-10 h-1.5 bg-gray-700 rounded-full mx-auto mb-3"></div>
+                    <div className="w-10 h-1.5 bg-gray-700 rounded-full mx-auto mb-3 md:hidden"></div>
                     <div className="flex items-center justify-between">
                         <h4 className="text-lg font-bold text-white">Seleccionar Fuente</h4>
                         <button onClick={onClose} className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700/60 transition-colors">
@@ -172,7 +173,7 @@ const SourceSelectorModal: React.FC<{
                         </button>
                     </div>
                 </div>
-                <ul className="px-3 pb-3 space-y-2 overflow-y-auto">
+                <ul className="px-3 pb-3 space-y-2 overflow-y-auto overscroll-y-contain">
                     {sources.map((source, index) => {
                         const isActive = activeIndex === index;
                         return (
@@ -199,7 +200,7 @@ const SourceSelectorModal: React.FC<{
     );
 };
 
-const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber, onClose, onProgressUpdate, onEpisodeChange }) => {
+const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber, onClose, onProgressUpdate, onEpisodeChange, showToast }) => {
   const { user, upsertMediaEntry } = useAuth();
   
   const [providerStatus, setProviderStatus] = useState<Map<string, ProviderStatus>>(new Map());
@@ -246,13 +247,15 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
                 progress: updatedEntry.progress, score: updatedEntry.score ?? 0, status: updatedEntry.status 
             }};
             onProgressUpdate(updatedMedia);
+            showToast('Progreso guardado');
         }
     } catch (error) {
         console.error("Failed to sync progress:", error);
+        showToast('Error al guardar progreso', 'error');
     } finally {
         setIsSyncing(false);
     }
-  }, [user, media, upsertMediaEntry, onProgressUpdate]);
+  }, [user, media, upsertMediaEntry, onProgressUpdate, showToast]);
   
   useEffect(() => {
     if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
@@ -390,6 +393,11 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
                 </button>
                 
                 <div className="flex-grow flex items-center justify-center gap-2">
+                   {isSyncing && (
+                    <div className="text-xs text-indigo-400 font-semibold flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-indigo-400/50 border-t-indigo-400 rounded-full animate-spin"></div>
+                    </div>
+                  )}
                    {activeProvider && activeSource && (
                        <button onClick={() => setIsSourceSelectorOpen(true)} className="flex-grow max-w-xs bg-gray-700/80 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-full transition-colors flex items-center justify-center gap-2">
                            <span className="truncate">{activeSource.name}</span>
@@ -408,7 +416,6 @@ const AnimePlayerView: React.FC<AnimePlayerViewProps> = ({ media, episodeNumber,
                     <ChevronRightIcon className="w-5 h-5" />
                 </button>
             </div>
-            {isSyncing && <p className="text-xs text-indigo-400 animate-pulse font-semibold">Guardando progreso...</p>}
         </div>
       </footer>
     </div>

@@ -21,7 +21,7 @@ const DayDetailModal: React.FC<{
                     <h3 className="text-lg font-bold text-white">{date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-800"><CloseIcon className="w-5 h-5" /></button>
                 </header>
-                <div className="p-4 max-h-[60vh] overflow-y-auto">
+                <div className="p-4 max-h-[60vh] overflow-y-auto overscroll-y-contain">
                     {items.length > 0 ? (
                         <ul className="space-y-3">
                             {items.map(item => (

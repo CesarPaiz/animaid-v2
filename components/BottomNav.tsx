@@ -5,6 +5,7 @@ import { MainView } from '../types';
 interface BottomNavProps {
   activeView: MainView;
   showLibrary: boolean;
+  navigate: (path: string) => void;
 }
 
 interface NavItemProps {
@@ -12,11 +13,13 @@ interface NavItemProps {
   icon: React.ReactNode;
   isActive: boolean;
   href: string;
+  onClick: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
+const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href, onClick }) => (
   <a
     href={href}
+    onClick={onClick}
     className="flex-1 flex flex-col items-center justify-center h-full transition-colors duration-300 ease-in-out focus:outline-none group"
   >
     <div className={`relative flex items-center justify-center h-12 w-16 transition-all duration-300 ease-in-out`}>
@@ -31,7 +34,7 @@ const NavItem: React.FC<NavItemProps> = ({ label, icon, isActive, href }) => (
   </a>
 );
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeView, showLibrary }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeView, showLibrary, navigate }) => {
   const navItems = [
     { id: 'home', label: 'Home', icon: <HomeIcon /> },
     { id: 'search', label: 'Buscar', icon: <SearchIcon /> },
@@ -42,6 +45,11 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeView, showLibrary }) => {
     { id: 'settings', label: 'Ajustes', icon: <SettingsIcon /> },
   ];
 
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+    e.preventDefault();
+    navigate(path);
+  }
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 h-20 bg-gray-950/80 backdrop-blur-xl border-t border-gray-800/80 z-50 md:hidden">
       <div className="flex justify-around items-center h-full max-w-md mx-auto px-2">
@@ -51,7 +59,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeView, showLibrary }) => {
             label={item.label}
             icon={item.icon}
             isActive={activeView === item.id}
-            href={`#/${item.id}`}
+            href={`/${item.id}`}
+            onClick={(e) => handleNavClick(e, `/${item.id}`)}
           />
         ))}
       </div>
